@@ -171,7 +171,9 @@ class EpubService {
         final package = opfDoc.findAllElements('package').firstOrNull;
         final metadata = package?.findElements('metadata').firstOrNull;
         String? coverId;
-        for (final meta in metadata?.findElements('meta') ?? const []) {
+        final metaList =
+            metadata?.findElements('meta') ?? const <XmlElement>[];
+        for (final meta in metaList) {
           if ((meta.getAttribute('name') ?? '').toLowerCase() == 'cover') {
             coverId = meta.getAttribute('content');
             break;

@@ -7,7 +7,6 @@ import 'package:flutter/services.dart';
 import '../models/book.dart';
 import '../services/progress_store.dart';
 import '../services/reader_settings.dart';
-import '../theme/app_theme.dart';
 import '../utils/pagination.dart';
 
 class ReaderScreen extends StatefulWidget {
@@ -535,7 +534,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _uiHideTimer?.cancel();
     final result = await showDialog<_SearchResult>(
       context: context,
-      builder: (ctx) => _SearchDialog(book: widget.book),
+      builder: (ctx) => _SearchDialog(
+        book: widget.book,
+        colors: _settings.theme.colors,
+      ),
     );
     if (result != null) {
       final keyword = result.keyword;
@@ -588,7 +590,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _uiHideTimer?.cancel();
     await showDialog<void>(
       context: context,
-      builder: (ctx) => _SettingsDialog(settings: _settings),
+      builder: (ctx) => _SettingsDialog(
+        settings: _settings,
+        colors: _settings.theme.colors,
+      ),
     );
     if (mounted) {
       _focusNode.requestFocus();
@@ -694,8 +699,9 @@ class _SearchResult {
 
 class _SearchDialog extends StatefulWidget {
   final Book book;
+  final (Color, Color, Color, Color) colors;
 
-  const _SearchDialog({super.key, required this.book});
+  const _SearchDialog({super.key, required this.book, required this.colors});
 
   @override
   State<_SearchDialog> createState() => _SearchDialogState();
@@ -774,8 +780,9 @@ class _SearchDialogState extends State<_SearchDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final (bg, text, subtext, accent) = widget.colors;
     return Dialog(
-      backgroundColor: Colors.white,
+      backgroundColor: bg,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: SizedBox(
         width: 520,
@@ -787,16 +794,16 @@ class _SearchDialogState extends State<_SearchDialog> {
               padding: const EdgeInsets.fromLTRB(20, 18, 12, 8),
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.search_rounded,
                     size: 20,
-                    color: AppTheme.primary,
+                    color: accent,
                   ),
                   const SizedBox(width: 8),
-                  const Text(
+                  Text(
                     '搜索',
                     style: TextStyle(
-                      color: AppTheme.textPrimary,
+                      color: text,
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
                     ),
@@ -805,7 +812,7 @@ class _SearchDialogState extends State<_SearchDialog> {
                   IconButton(
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.close, size: 18),
-                    color: AppTheme.textSecondary,
+                    color: subtext,
                   ),
                 ],
               ),
@@ -815,16 +822,19 @@ class _SearchDialogState extends State<_SearchDialog> {
               child: TextField(
                 controller: _controller,
                 focusNode: _focusNode,
+                style: TextStyle(color: text),
+                cursorColor: accent,
                 decoration: InputDecoration(
                   hintText: '输入关键字搜索内容...',
-                  hintStyle: const TextStyle(
-                    color: AppTheme.textTertiary,
+                  hintStyle: TextStyle(
+                    color: subtext.withValues(alpha: 0.7),
                     fontSize: 13,
                   ),
-                  prefixIcon: const Icon(Icons.search, size: 18),
+                  prefixIcon: Icon(Icons.search, size: 18, color: subtext),
                   suffixIcon: _controller.text.isNotEmpty
                       ? IconButton(
                           icon: const Icon(Icons.clear, size: 16),
+                          color: subtext,
                           onPressed: () {
                             _controller.clear();
                             setState(() {
@@ -834,20 +844,23 @@ class _SearchDialogState extends State<_SearchDialog> {
                           },
                         )
                       : null,
+                  filled: true,
+                  fillColor: bg.hoverOverlay(),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: AppTheme.divider),
+                    borderSide: BorderSide(
+                      color: subtext.withValues(alpha: 0.3),
+                    ),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                      color: AppTheme.primary,
+                    borderSide: BorderSide(
+                      color: accent,
                       width: 1.5,
                     ),
                   ),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                 ),
-                style: const TextStyle(fontSize: 13),
                 onSubmitted: _doSearch,
                 onChanged: (v) => setState(() {}),
               ),
@@ -858,16 +871,16 @@ class _SearchDialogState extends State<_SearchDialog> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.search_off,
                         size: 40,
-                        color: AppTheme.textTertiary,
+                        color: subtext.withValues(alpha: 0.5),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         '未找到匹配内容',
                         style: TextStyle(
-                          color: AppTheme.textSecondary,
+                          color: subtext,
                           fontSize: 13,
                         ),
                       ),
@@ -881,16 +894,16 @@ class _SearchDialogState extends State<_SearchDialog> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.menu_book_outlined,
                         size: 40,
-                        color: AppTheme.textTertiary,
+                        color: subtext.withValues(alpha: 0.5),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         '输入关键字搜索全书内容',
                         style: TextStyle(
-                          color: AppTheme.textTertiary,
+                          color: subtext,
                           fontSize: 12,
                         ),
                       ),
@@ -915,7 +928,7 @@ class _SearchDialogState extends State<_SearchDialog> {
                             chapterIndex: m.chapterIndex,
                           ),
                         ),
-                        hoverColor: AppTheme.hoverBg,
+                        hoverColor: bg.hoverOverlay(),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 20,
@@ -932,13 +945,13 @@ class _SearchDialogState extends State<_SearchDialog> {
                                       vertical: 1,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: AppTheme.selectedBg,
+                                      color: accent.withValues(alpha: 0.15),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(
                                       '第 ${m.chapterIndex + 1} 章',
-                                      style: const TextStyle(
-                                        color: AppTheme.primary,
+                                      style: TextStyle(
+                                        color: accent,
                                         fontSize: 10,
                                         fontWeight: FontWeight.w600,
                                       ),
@@ -950,8 +963,8 @@ class _SearchDialogState extends State<_SearchDialog> {
                                       m.chapterTitle,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        color: AppTheme.textPrimary,
+                                      style: TextStyle(
+                                        color: text,
                                         fontSize: 13,
                                         fontWeight: FontWeight.w600,
                                       ),
@@ -959,8 +972,8 @@ class _SearchDialogState extends State<_SearchDialog> {
                                   ),
                                   Text(
                                     '${m.count} 处',
-                                    style: const TextStyle(
-                                      color: AppTheme.textTertiary,
+                                    style: TextStyle(
+                                      color: subtext,
                                       fontSize: 11,
                                     ),
                                   ),
@@ -972,8 +985,8 @@ class _SearchDialogState extends State<_SearchDialog> {
                                   m.snippet,
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: AppTheme.textSecondary,
+                                  style: TextStyle(
+                                    color: subtext,
                                     fontSize: 11,
                                     height: 1.4,
                                   ),
@@ -1021,8 +1034,9 @@ class _ChapterListDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final (bg, text, subtext, accent) = colors;
     return Dialog(
-      backgroundColor: Colors.white,
+      backgroundColor: bg,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: SizedBox(
         width: 420,
@@ -1034,10 +1048,10 @@ class _ChapterListDialog extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 18, 12, 8),
               child: Row(
                 children: [
-                  const Text(
+                  Text(
                     '目录',
                     style: TextStyle(
-                      color: AppTheme.textPrimary,
+                      color: text,
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
                     ),
@@ -1045,8 +1059,8 @@ class _ChapterListDialog extends StatelessWidget {
                   const SizedBox(width: 8),
                   Text(
                     '${book.chapters.length} 章',
-                    style: const TextStyle(
-                      color: AppTheme.textSecondary,
+                    style: TextStyle(
+                      color: subtext,
                       fontSize: 12,
                     ),
                   ),
@@ -1054,12 +1068,12 @@ class _ChapterListDialog extends StatelessWidget {
                   IconButton(
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.close, size: 18),
-                    color: AppTheme.textSecondary,
+                    color: subtext,
                   ),
                 ],
               ),
             ),
-            const Divider(height: 1),
+            Divider(height: 1, color: subtext.withValues(alpha: 0.18)),
             Expanded(
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(vertical: 6),
@@ -1068,10 +1082,12 @@ class _ChapterListDialog extends StatelessWidget {
                   final ch = book.chapters[index];
                   final selected = index == currentIndex;
                   return Material(
-                    color: selected ? AppTheme.selectedBg : Colors.transparent,
+                    color: selected
+                        ? accent.withValues(alpha: 0.16)
+                        : Colors.transparent,
                     child: InkWell(
                       onTap: () => Navigator.pop(context, index),
-                      hoverColor: AppTheme.hoverBg,
+                      hoverColor: bg.hoverOverlay(),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 20,
@@ -1083,9 +1099,7 @@ class _ChapterListDialog extends StatelessWidget {
                               width: 4,
                               height: 16,
                               decoration: BoxDecoration(
-                                color: selected
-                                    ? AppTheme.primary
-                                    : Colors.transparent,
+                                color: selected ? accent : Colors.transparent,
                                 borderRadius: BorderRadius.circular(2),
                               ),
                             ),
@@ -1096,9 +1110,7 @@ class _ChapterListDialog extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: selected
-                                      ? AppTheme.primaryDark
-                                      : AppTheme.textPrimary,
+                                  color: selected ? accent : text,
                                   fontSize: 13,
                                   fontWeight: selected
                                       ? FontWeight.w600
@@ -1123,8 +1135,9 @@ class _ChapterListDialog extends StatelessWidget {
 
 class _SettingsDialog extends StatefulWidget {
   final ReaderSettings settings;
+  final (Color, Color, Color, Color) colors;
 
-  const _SettingsDialog({required this.settings});
+  const _SettingsDialog({required this.settings, required this.colors});
 
   @override
   State<_SettingsDialog> createState() => _SettingsDialogState();
@@ -1158,8 +1171,9 @@ class _SettingsDialogState extends State<_SettingsDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final (bg, text, subtext, accent) = widget.colors;
     return Dialog(
-      backgroundColor: Colors.white,
+      backgroundColor: bg,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: SizedBox(
         width: 380,
@@ -1171,10 +1185,10 @@ class _SettingsDialogState extends State<_SettingsDialog> {
             children: [
               Row(
                 children: [
-                  const Text(
+                  Text(
                     '阅读设置',
                     style: TextStyle(
-                      color: AppTheme.textPrimary,
+                      color: text,
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
                     ),
@@ -1183,11 +1197,11 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   IconButton(
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.close, size: 18),
-                    color: AppTheme.textSecondary,
+                    color: subtext,
                   ),
                 ],
               ),
-              const Divider(height: 20),
+              Divider(height: 20, color: subtext.withValues(alpha: 0.18)),
               _SliderRow(
                 label: '字号',
                 valueLabel: _fontSize.toStringAsFixed(0),
@@ -1195,6 +1209,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 min: 14,
                 max: 24,
                 divisions: 10,
+                colors: widget.colors,
                 onChanged: (v) {
                   setState(() => _fontSize = v);
                   _update();
@@ -1207,6 +1222,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 min: 1.4,
                 max: 2.4,
                 divisions: 20,
+                colors: widget.colors,
                 onChanged: (v) {
                   setState(() => _lineHeight = v);
                   _update();
@@ -1219,18 +1235,19 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 min: 40,
                 max: 160,
                 divisions: 12,
+                colors: widget.colors,
                 onChanged: (v) {
                   setState(() => _padding = v);
                   _update();
                 },
               ),
               const SizedBox(height: 12),
-              const Align(
+              Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
                   '背景',
                   style: TextStyle(
-                    color: AppTheme.textSecondary,
+                    color: subtext,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
@@ -1256,8 +1273,8 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
                               color: selected
-                                  ? AppTheme.primary
-                                  : AppTheme.divider,
+                                  ? accent
+                                  : subtext.withValues(alpha: 0.3),
                               width: selected ? 2 : 1,
                             ),
                           ),
@@ -1277,9 +1294,9 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 }).toList(),
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 '上 / 下:翻页    左 / 右:切章    Esc:返回',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+                style: TextStyle(color: subtext, fontSize: 11),
               ),
             ],
           ),
@@ -1296,6 +1313,7 @@ class _SliderRow extends StatelessWidget {
   final double min;
   final double max;
   final int divisions;
+  final (Color, Color, Color, Color) colors;
   final ValueChanged<double> onChanged;
 
   const _SliderRow({
@@ -1305,11 +1323,13 @@ class _SliderRow extends StatelessWidget {
     required this.min,
     required this.max,
     required this.divisions,
+    required this.colors,
     required this.onChanged,
   });
 
   @override
   Widget build(BuildContext context) {
+    final (bg, text, subtext, accent) = colors;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -1318,8 +1338,8 @@ class _SliderRow extends StatelessWidget {
             width: 36,
             child: Text(
               label,
-              style: const TextStyle(
-                color: AppTheme.textSecondary,
+              style: TextStyle(
+                color: subtext,
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
@@ -1331,7 +1351,7 @@ class _SliderRow extends StatelessWidget {
               min: min,
               max: max,
               divisions: divisions,
-              activeColor: AppTheme.primary,
+              activeColor: accent,
               onChanged: onChanged,
             ),
           ),
@@ -1340,8 +1360,8 @@ class _SliderRow extends StatelessWidget {
             child: Text(
               valueLabel,
               textAlign: TextAlign.right,
-              style: const TextStyle(
-                color: AppTheme.textPrimary,
+              style: TextStyle(
+                color: text,
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
