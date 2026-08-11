@@ -40,7 +40,11 @@ class BookGridItem extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(child: _buildCover()),
+            // 固定 3:4 书本封面比例:窗口缩放时封面不变形,只改变大小
+            AspectRatio(
+              aspectRatio: 3 / 4,
+              child: _buildCover(),
+            ),
             const SizedBox(height: 8),
             SizedBox(
               height: 36,

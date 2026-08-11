@@ -478,6 +478,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
+  /// 计算书架网格单元格宽高比,保证封面 3:4 不变形。
+  /// 单元格高度 = 封面(宽×4/3) + 标题(36) + 间距(8+2) + 作者(16)。
+  double _gridAspectRatio(double totalWidth, int cols) {
+    const crossSpacing = 22.0;
+    final colWidth = (totalWidth - crossSpacing * (cols - 1)) / cols;
+    const extra = 36.0 + 16.0 + 8.0 + 2.0;
+    final cellHeight = colWidth * 4 / 3 + extra;
+    return colWidth / cellHeight;
+  }
+
   Widget _buildGridView() {
     return Container(
       color: AppTheme.background,
@@ -507,7 +517,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   itemCount: _books.length,
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: cols,
-                    childAspectRatio: 0.62,
+                    // 动态比例:封面固定 3:4,加上标题/作者固定高度后,
+                    // 缩放窗口时封面宽高比保持不变
+                    childAspectRatio: _gridAspectRatio(constraints.maxWidth, cols),
                     crossAxisSpacing: 22,
                     mainAxisSpacing: 26,
                   ),
