@@ -132,10 +132,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
     await Future.delayed(const Duration(milliseconds: 30));
     if (!mounted) return;
     final chapter = widget.book.chapters[_chapterIndex];
+    // 分页高度须减去章节标题区域(标题最多2行 + 18间距),
+    // 否则每页文本按满高分页,渲染时被标题压缩导致末行文字截断/遮挡
+    final titleHeight = _titleReservedHeight(_pageSize.width);
+    final textMaxHeight = math.max(80.0, _pageSize.height - titleHeight);
     final pages = TextPaginator.paginate(
       text: chapter.content,
       maxWidth: _pageSize.width,
-      maxHeight: _pageSize.height,
+      maxHeight: textMaxHeight,
       style: _textStyle(),
     );
     _pagesCache[_chapterIndex] = pages;
@@ -145,6 +149,26 @@ class _ReaderScreenState extends State<ReaderScreen> {
       _ready = true;
       _pageIndex = _pageIndex.clamp(0, math.max(0, pages.length - 1));
     });
+  }
+
+  /// 测量章节标题占用的高度(最多 2 行 + 18px 间距),与 _PageContent 渲染一致。
+  double _titleReservedHeight(double maxWidth) {
+    final title = widget.book.chapters[_chapterIndex].title;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: title,
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.4,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 2,
+    )..layout(maxWidth: maxWidth);
+    final h = painter.height + 18;
+    painter.dispose();
+    return h;
   }
 
   /// 键位映射:
@@ -345,7 +369,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       child: Tooltip(
         message: icon == Icons.chevron_left_rounded ? '上一页' : '下一页',
         child: Material(
-          color: colors.$1.withValues(alpha: 0.86),
+          color: colors.$1.withValues(alpha: 0.82),
           borderRadius: BorderRadius.circular(10),
           child: InkWell(
             onTap: onTap,
@@ -366,7 +390,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Widget _buildTopBar((Color, Color, Color, Color) colors) {
     return Container(
       height: 56,
-      color: colors.$1.withValues(alpha: 0.92),
+      // 半透明背景: hover 显示工具栏时下方文字仍可隐约透出,不突兀遮挡
+      color: colors.$1.withValues(alpha: 0.88),
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         children: [
@@ -475,7 +500,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
     return Container(
       height: 44,
-      color: colors.$1.withValues(alpha: 0.92),
+      color: colors.$1.withValues(alpha: 0.88),
       padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         children: [

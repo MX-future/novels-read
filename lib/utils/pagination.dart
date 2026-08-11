@@ -41,11 +41,13 @@ class TextPaginator {
       final pageBottomY = pageTopY + maxHeight;
 
       int endLine = currentLine;
-      // 找出最后一行,其顶部仍在可见区域内
+      // 找出最后一行,其"底部"仍在可见区域内(避免行尾被截断)
       for (int i = currentLine; i < lines.length; i++) {
         final line = lines[i];
         final lineTopY = line.baseline - line.ascent;
-        if (i > currentLine && lineTopY >= pageBottomY) break;
+        final lineBottomY = lineTopY + line.height;
+        // 只保证完整行可见:若某行底部已超出页底,则本页到此为止
+        if (i > currentLine && lineBottomY > pageBottomY + 0.5) break;
         endLine = i;
       }
 
