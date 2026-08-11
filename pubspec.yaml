@@ -1,0 +1,41 @@
+name: novel_reader
+description: "Mac 端小说阅读器"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # EPUB 解析
+  epubx: ^4.0.0
+
+  # 文件选择
+  file_picker: ^8.1.4
+
+  # 本地存储
+  path_provider: ^2.1.5
+  shared_preferences: ^2.3.2
+
+  # 路径处理
+  path: ^1.9.0
+
+  # HTML 转纯文本
+  html: ^0.15.4
+
+  # 直接读取 epub(zip) 封面兜底
+  archive: ^3.6.1
+  xml: ^6.6.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
