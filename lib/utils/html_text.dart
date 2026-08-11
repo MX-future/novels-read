@@ -24,6 +24,18 @@ class HtmlText {
     'footer',
   };
 
+  /// 这些标签的内容不应进入正文(脚本/样式/元信息等)。
+  static const _skipTags = <String>{
+    'script',
+    'style',
+    'head',
+    'title',
+    'meta',
+    'link',
+    'noscript',
+    'template',
+  };
+
   static String convert(String htmlString) {
     if (htmlString.isEmpty) return '';
     final doc = html_parser.parse(htmlString);
@@ -58,6 +70,7 @@ class HtmlText {
     }
     if (node is Element) {
       final tag = node.localName?.toLowerCase() ?? '';
+      if (_skipTags.contains(tag)) return; // 跳过 script/style 等,不输出其内容
       final isBlock = _blockTags.contains(tag);
 
       if (isBlock && !_endsWithNewline(buffer)) {
