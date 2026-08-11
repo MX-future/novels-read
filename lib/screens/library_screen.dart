@@ -82,7 +82,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     setState(() {
       _selectedBookId = meta.id;
       _openedBook = book;
-      _sidebarCollapsed = true;
+      // 注意:不再强制收起侧边栏,阅读时由 _buildSidebar 按 _openedBook 决定宽度 0
     });
   }
 
@@ -90,7 +90,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
     setState(() {
       _selectedBookId = null;
       _openedBook = null;
-      _sidebarCollapsed = false;
     });
     _refresh();
   }
@@ -158,11 +157,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Widget _buildSidebar() {
+    final reading = _openedBook != null; // 阅读时完全隐藏侧边栏
     final collapsed = _sidebarCollapsed;
+    final width = reading ? 0.0 : (collapsed ? 64.0 : 240.0);
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
-      width: collapsed ? 64 : 240,
+      width: width,
       decoration: const BoxDecoration(
         color: AppTheme.sidebarBg,
         border: Border(right: BorderSide(color: AppTheme.divider, width: 1)),
@@ -173,7 +174,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildSidebarHeader(),
-          if (!collapsed)
+          if (!collapsed && !reading)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
               child: Row(
@@ -199,7 +200,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
             ),
           Expanded(
-            child: collapsed ? const SizedBox.shrink() : _buildBookList(),
+            child: (collapsed || reading)
+                ? const SizedBox.shrink()
+                : _buildBookList(),
           ),
         ],
       ),
