@@ -25,4 +25,28 @@ echo "    FLUTTER_STORAGE_BASE_URL = ${FLUTTER_STORAGE_BASE_URL}"
 echo
 
 echo "==> flutter build macos $*"
-exec flutter build macos "$@"
+flutter build macos "$@"
+
+# ---------- 3. 修复 icns (Xcode 资产目录有时会把 PNG 错误标为 RGBA) ----------
+# 用 iconutil 直接从 PNG 重新打包成 icns,确保无 alpha + 包含 1024 大尺寸
+APP_PATH="$(find build/macos/Build/Products -name '*.app' -type d | head -1)"
+if [ -n "$APP_PATH" ] && [ -d "$APP_PATH/Contents/Resources" ]; then
+  ICONSET="$(mktemp -d)/app.iconset"
+  mkdir -p "$ICONSET"
+  SRC="macos/Runner/Assets.xcassets/AppIcon.appiconset"
+  if [ -f "$SRC/app_icon_1024.png" ]; then
+    cp "$SRC/app_icon_16.png"   "$ICONSET/icon_16x16.png"
+    cp "$SRC/app_icon_32.png"   "$ICONSET/icon_16x16@2x.png"
+    cp "$SRC/app_icon_32.png"   "$ICONSET/icon_32x32.png"
+    cp "$SRC/app_icon_64.png"   "$ICONSET/icon_32x32@2x.png"
+    cp "$SRC/app_icon_128.png"  "$ICONSET/icon_128x128.png"
+    cp "$SRC/app_icon_256.png"  "$ICONSET/icon_128x128@2x.png"
+    cp "$SRC/app_icon_256.png"  "$ICONSET/icon_256x256.png"
+    cp "$SRC/app_icon_512.png"  "$ICONSET/icon_256x256@2x.png"
+    cp "$SRC/app_icon_512.png"  "$ICONSET/icon_512x512.png"
+    cp "$SRC/app_icon_1024.png" "$ICONSET/icon_512x512@2x.png"
+    iconutil -c icns "$ICONSET" -o "$APP_PATH/Contents/Resources/AppIcon.icns" 2>/dev/null
+    echo "==> icns 已用 iconutil 重新打包 (无 alpha, 含 1024@2x)"
+  fi
+  rm -rf "$ICONSET"
+fi
