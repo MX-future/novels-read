@@ -9,6 +9,7 @@ import '../theme/app_theme.dart';
 class BookSidebarTile extends StatelessWidget {
   final BookMeta book;
   final bool selected;
+  final ReadingProgress? progress;
   final VoidCallback onTap;
   final VoidCallback? onDelete;
 
@@ -16,9 +17,22 @@ class BookSidebarTile extends StatelessWidget {
     super.key,
     required this.book,
     required this.selected,
+    this.progress,
     required this.onTap,
     this.onDelete,
   });
+
+  /// 是否已读过(不处于(0,0)初始状态)。
+  bool get _hasRead =>
+      progress != null && (progress!.chapterIndex > 0 || progress!.pageIndex > 0);
+
+  /// 阅读进度(0~1): (chapterIndex+1) / 总章数。
+  double get _progress {
+    if (!_hasRead) return 0;
+    final total = book.chapterCount;
+    if (total <= 0) return 0;
+    return ((progress!.chapterIndex + 1) / total).clamp(0.0, 1.0);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -65,6 +79,35 @@ class BookSidebarTile extends StatelessWidget {
                           fontSize: 11,
                         ),
                       ),
+                      if (_hasRead) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(2),
+                                child: LinearProgressIndicator(
+                                  value: _progress,
+                                  minHeight: 3,
+                                  backgroundColor: AppTheme.divider,
+                                  valueColor: const AlwaysStoppedAnimation(
+                                    AppTheme.primary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${(_progress * 100).round()}%',
+                              style: const TextStyle(
+                                color: AppTheme.textSecondary,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),

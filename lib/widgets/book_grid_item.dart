@@ -18,6 +18,18 @@ class BookGridItem extends StatelessWidget {
     required this.onTap,
   });
 
+  /// 是否已读过(不处于(0,0)初始状态)。
+  bool get _hasRead =>
+      progress != null && (progress!.chapterIndex > 0 || progress!.pageIndex > 0);
+
+  /// 阅读进度(0~1)。按"已读至第 N 章"估算: (chapterIndex+1) / 总章数。
+  double get _progress {
+    if (!_hasRead) return 0;
+    final total = book.chapterCount;
+    if (total <= 0) return 0;
+    return ((progress!.chapterIndex + 1) / total).clamp(0.0, 1.0);
+  }
+
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
@@ -66,7 +78,8 @@ class BookGridItem extends StatelessWidget {
   Widget _buildCover() {
     final hasCover =
         book.coverPath != null && File(book.coverPath!).existsSync();
-    return Container(
+    final pct = _progress;
+    final cover = Container(
       decoration: BoxDecoration(
         color: AppTheme.sidebarBg,
         borderRadius: BorderRadius.circular(6),
@@ -100,6 +113,55 @@ class BookGridItem extends StatelessWidget {
               errorBuilder: (context, error, stack) => _buildPlaceholderCover(),
             )
           : _buildPlaceholderCover(),
+    );
+
+    // 已读的书在封面底部叠加进度条 + 百分比
+    if (!_hasRead) return cover;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        cover,
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: Container(
+            height: 24,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0x00000000), Color(0xB3000000)],
+              ),
+            ),
+            padding: const EdgeInsets.fromLTRB(8, 7, 8, 5),
+            child: Row(
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: LinearProgressIndicator(
+                      value: pct,
+                      minHeight: 4,
+                      backgroundColor: Colors.white30,
+                      valueColor: const AlwaysStoppedAnimation(AppTheme.primary),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '${(pct * 100).round()}%',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 

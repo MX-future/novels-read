@@ -383,6 +383,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         return BookSidebarTile(
           book: meta,
           selected: selected,
+          progress: _progress[meta.id],
           onTap: () => _openBook(meta),
           onDelete: () => _deleteBook(meta),
         );
