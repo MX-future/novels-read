@@ -7,6 +7,8 @@ class MainFlutterWindow: NSWindow {
     let windowFrame = CGRect(x: 200, y: 160, width: 1180, height: 760)
     self.contentViewController = flutterViewController
     self.setFrame(windowFrame, display: true)
+    // 限制最小窗口尺寸,避免被拖成怪比例(否则 Dock 实时缩略图与图标槽位比例不一致)
+    self.contentMinSize = NSSize(width: 900, height: 600)
 
     // 使用标准 macOS 标题栏,避免内容延伸到标题栏下方导致按钮被遮挡
     self.titlebarAppearsTransparent = false
