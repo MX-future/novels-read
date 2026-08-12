@@ -1046,7 +1046,7 @@ class _SearchMatch {
   });
 }
 
-class _ChapterListDialog extends StatelessWidget {
+class _ChapterListDialog extends StatefulWidget {
   final Book book;
   final int currentIndex;
   final (Color, Color, Color, Color) colors;
@@ -1058,8 +1058,45 @@ class _ChapterListDialog extends StatelessWidget {
   });
 
   @override
+  State<_ChapterListDialog> createState() => _ChapterListDialogState();
+}
+
+class _ChapterListDialogState extends State<_ChapterListDialog> {
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // 打开目录后自动滚动定位到当前章节(居中显示)
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToCurrent());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToCurrent() {
+    if (!mounted) return;
+    if (!_scrollController.hasClients) {
+      // 首帧可能尚未 attach,下一帧再试
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToCurrent());
+      return;
+    }
+    // 每个条目估算高度: vertical padding 11*2 + 文字行高 ≈ 40
+    const itemHeight = 40.0;
+    final viewport = _scrollController.position.viewportDimension;
+    final target =
+        widget.currentIndex * itemHeight - (viewport - itemHeight) / 2;
+    _scrollController.jumpTo(
+      target.clamp(0.0, _scrollController.position.maxScrollExtent),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final (bg, text, subtext, accent) = colors;
+    final (bg, text, subtext, accent) = widget.colors;
     return Dialog(
       backgroundColor: bg,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1083,7 +1120,7 @@ class _ChapterListDialog extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    '${book.chapters.length} 章',
+                    '${widget.book.chapters.length} 章',
                     style: TextStyle(
                       color: subtext,
                       fontSize: 12,
@@ -1101,11 +1138,12 @@ class _ChapterListDialog extends StatelessWidget {
             Divider(height: 1, color: subtext.withValues(alpha: 0.18)),
             Expanded(
               child: ListView.builder(
+                controller: _scrollController,
                 padding: const EdgeInsets.symmetric(vertical: 6),
-                itemCount: book.chapters.length,
+                itemCount: widget.book.chapters.length,
                 itemBuilder: (context, index) {
-                  final ch = book.chapters[index];
-                  final selected = index == currentIndex;
+                  final ch = widget.book.chapters[index];
+                  final selected = index == widget.currentIndex;
                   return Material(
                     color: selected
                         ? accent.withValues(alpha: 0.16)
