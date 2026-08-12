@@ -1084,13 +1084,15 @@ class _ChapterListDialogState extends State<_ChapterListDialog> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToCurrent());
       return;
     }
-    // 每个条目估算高度: vertical padding 11*2 + 文字行高 ≈ 40
-    const itemHeight = 40.0;
-    final viewport = _scrollController.position.viewportDimension;
+    // 与 ListView.itemExtent 保持一致,滚动偏移才能精确
+    const itemExtent = 40.0;
+    final position = _scrollController.position;
+    final viewport = position.viewportDimension;
+    // 目标:让当前章节的中心对准视口中心
     final target =
-        widget.currentIndex * itemHeight - (viewport - itemHeight) / 2;
+        widget.currentIndex * itemExtent - (viewport - itemExtent) / 2;
     _scrollController.jumpTo(
-      target.clamp(0.0, _scrollController.position.maxScrollExtent),
+      target.clamp(0.0, position.maxScrollExtent),
     );
   }
 
@@ -1140,6 +1142,8 @@ class _ChapterListDialogState extends State<_ChapterListDialog> {
               child: ListView.builder(
                 controller: _scrollController,
                 padding: const EdgeInsets.symmetric(vertical: 6),
+                // 固定条目高度,保证滚动定位精确(与 _scrollToCurrent 一致)
+                itemExtent: 40,
                 itemCount: widget.book.chapters.length,
                 itemBuilder: (context, index) {
                   final ch = widget.book.chapters[index];
@@ -1175,6 +1179,7 @@ class _ChapterListDialogState extends State<_ChapterListDialog> {
                                 style: TextStyle(
                                   color: selected ? accent : text,
                                   fontSize: 13,
+                                  height: 1.3,
                                   fontWeight: selected
                                       ? FontWeight.w600
                                       : FontWeight.w400,
