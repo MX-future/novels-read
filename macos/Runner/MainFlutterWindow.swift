@@ -42,6 +42,10 @@ class MainFlutterWindow: NSWindow {
       standardWindowButton(.zoomButton),
     ].compactMap { $0 }
     setTrafficLightsVisible(false)
+    // 首次布局后重挂交通灯,确保位置与 40px 工具栏对齐
+    DispatchQueue.main.async { [weak self] in
+      self?.reparentTrafficLights()
+    }
 
     // 监听窗口尺寸变化,保存 frame + 调整交通灯对齐
     NotificationCenter.default.addObserver(
@@ -84,25 +88,43 @@ class MainFlutterWindow: NSWindow {
       btn.alphaValue = visible ? 1.0 : 0.0
     }
     if visible {
-      adjustTrafficLightsAlignment()
+      reparentTrafficLights()
     }
   }
 
-  /// 调整交通灯按钮垂直居中于 Flutter 工具栏(40px 高)。
-  private func adjustTrafficLightsAlignment() {
-    guard !trafficLightButtons.isEmpty else { return }
+  /// 把交通灯按钮重挂到窗口 contentView,完全控制位置:
+  /// 垂直居中于 Flutter 顶部工具栏(40px 高),与返回/搜索等按钮同排对齐。
+  private func reparentTrafficLights() {
+    guard let contentView = self.contentView, !trafficLightButtons.isEmpty else {
+      return
+    }
+    let toolbarHeight: CGFloat = 40
     for btn in trafficLightButtons {
-      var frame = btn.frame
-      // 工具栏高度 40,按钮垂直居中 (按钮自身高度约 14~16)
-      frame.origin.y = (40 - frame.height) / 2
-      btn.frame = frame
+      // 已挂到 contentView 的按钮只更新 y
+      if btn.superview === contentView {
+        var frame = btn.frame
+        frame.origin.y = (toolbarHeight - frame.height) / 2
+        btn.frame = frame
+        continue
+      }
+      // 记录相对 contentView 的 x(保持默认左侧间距)
+      let xInContent = btn.convert(btn.bounds.origin, to: contentView).x
+      let size = btn.frame.size
+      btn.removeFromSuperview()
+      contentView.addSubview(btn)
+      btn.frame = CGRect(
+        x: xInContent,
+        y: (toolbarHeight - size.height) / 2,
+        width: size.width,
+        height: size.height
+      )
     }
   }
 
   /// 窗口尺寸变化时保存 frame(位置 + 大小),并保持交通灯对齐。
   @objc private func windowDidResize(_ notification: Notification) {
     UserDefaults.standard.set(NSStringFromRect(self.frame), forKey: Self.frameKey)
-    adjustTrafficLightsAlignment()
+    reparentTrafficLights()
   }
 
   /// 把恢复的 frame 限制在可见屏幕内,避免显示器变化后窗口跑到屏幕外。
