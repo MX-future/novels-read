@@ -44,9 +44,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
   @override
   void initState() {
     super.initState();
-    // 窗口标题显示小说名(内容页不再显示标题);沉浸式:隐藏交通灯
+    // 窗口标题显示小说名
     _windowChannel.invokeMethod('setTitle', widget.book.title);
-    _windowChannel.invokeMethod('setTrafficLightsVisible', false);
     _init();
     ReaderSettings.current.addListener(_onSettingsChanged);
   }
@@ -79,9 +78,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _uiHideTimer?.cancel();
     _topBarHideTimer?.cancel();
     _flushProgress();
-    // 返回书架时恢复窗口标题 + 显示交通灯
+    // 返回书架时恢复窗口标题
     _windowChannel.invokeMethod('setTitle', '书架');
-    _windowChannel.invokeMethod('setTrafficLightsVisible', true);
     ReaderSettings.current.removeListener(_onSettingsChanged);
     _focusNode.dispose();
     super.dispose();
@@ -112,20 +110,18 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (_uiVisible && mounted) setState(() => _uiVisible = false);
   }
 
-  /// 显示顶部工具栏(仅当鼠标在顶部区域),并联动显示交通灯
+  /// 显示顶部工具栏(仅当鼠标在顶部区域)
   void _showTopBar() {
     _topBarHideTimer?.cancel();
     if (!_topBarVisible && mounted) {
       setState(() => _topBarVisible = true);
     }
-    _windowChannel.invokeMethod('setTrafficLightsVisible', true);
   }
 
-  /// 立即隐藏顶部工具栏,并联动隐藏交通灯
+  /// 立即隐藏顶部工具栏
   void _hideTopBar() {
     _topBarHideTimer?.cancel();
     if (_topBarVisible && mounted) setState(() => _topBarVisible = false);
-    _windowChannel.invokeMethod('setTrafficLightsVisible', false);
   }
 
   TextStyle _textStyle() => TextStyle(

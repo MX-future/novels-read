@@ -5,9 +5,6 @@ class MainFlutterWindow: NSWindow {
   /// UserDefaults 键:保存窗口 frame(位置 + 大小)。
   private static let frameKey = "windowFrame"
 
-  /// 红黄绿交通灯按钮引用,沉浸式时隐藏、hover 顶部时显示。
-  private var trafficLightButtons: [NSButton] = []
-
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
     let windowFrame = CGRect(x: 200, y: 160, width: 1180, height: 760)
@@ -25,9 +22,9 @@ class MainFlutterWindow: NSWindow {
     // 允许缩得很小:480x320(比例 1.5,接近默认 1180x760 的 1.55)
     self.contentMinSize = NSSize(width: 480, height: 320)
 
-    // 使用标准 macOS 标题栏,避免内容延伸到标题栏下方导致按钮被遮挡
     // 沉浸式:标题栏透明 + 内容全尺寸延伸到标题栏,背景色由 Flutter 阅读背景决定,
-    // 工具栏按钮(搜索/设置/目录)由 Flutter 渲染在标题栏区域
+    // 工具栏按钮(搜索/设置/目录)由 Flutter 渲染在标题栏区域。
+    // 交通灯保持 macOS 默认配置(系统管理位置与显隐, 不做自定义重挂)
     self.titlebarAppearsTransparent = true
     self.titleVisibility = .hidden
     self.styleMask.insert(.fullSizeContentView)
@@ -35,20 +32,7 @@ class MainFlutterWindow: NSWindow {
     self.styleMask.insert(.miniaturizable)
     self.styleMask.insert(.resizable)
 
-    // 保存交通灯按钮引用,默认显示(书架页);阅读界面进入时由 Flutter 隐藏
-    trafficLightButtons = [
-      standardWindowButton(.closeButton),
-      standardWindowButton(.miniaturizeButton),
-      standardWindowButton(.zoomButton),
-    ].compactMap { $0 }
-    reparentTrafficLights()
-    // 首次布局后重挂交通灯,确保位置与 40px 工具栏对齐
-    DispatchQueue.main.async { [weak self] in
-      self?.reparentTrafficLights()
-      self?.setTrafficLightsVisible(true)
-    }
-
-    // 监听窗口尺寸变化,保存 frame + 调整交通灯对齐
+    // 监听窗口尺寸变化,保存 frame 供下次启动恢复
     NotificationCenter.default.addObserver(
       self,
       selector: #selector(windowDidResize(_:)),
@@ -56,21 +40,7 @@ class MainFlutterWindow: NSWindow {
       object: self,
     )
 
-    // 全屏时 macOS 会隐藏交通灯,进入/退出全屏后重新挂载并显示
-    NotificationCenter.default.addObserver(
-      self,
-      selector: #selector(windowDidToggleFullScreen),
-      name: NSWindow.didEnterFullScreenNotification,
-      object: self,
-    )
-    NotificationCenter.default.addObserver(
-      self,
-      selector: #selector(windowDidToggleFullScreen),
-      name: NSWindow.didExitFullScreenNotification,
-      object: self,
-    )
-
-    // 注册窗口标题通道:Flutter 侧切换窗口标题与交通灯显示
+    // 注册窗口标题通道:Flutter 侧切换窗口标题(阅读时显示小说名,返回显示应用名)
     let channel = FlutterMethodChannel(
       name: "com.reader.novelReader/window",
       binaryMessenger: flutterViewController.engine.binaryMessenger,
@@ -80,11 +50,6 @@ class MainFlutterWindow: NSWindow {
       case "setTitle":
         if let title = call.arguments as? String, !title.isEmpty {
           self?.title = title
-        }
-        result(nil)
-      case "setTrafficLightsVisible":
-        if let visible = call.arguments as? Bool {
-          self?.setTrafficLightsVisible(visible)
         }
         result(nil)
       default:
@@ -97,65 +62,9 @@ class MainFlutterWindow: NSWindow {
     super.awakeFromNib()
   }
 
-  /// 控制红黄绿交通灯按钮的显示/隐藏(沉浸式时隐藏, hover 顶部时显示)。
-  private func setTrafficLightsVisible(_ visible: Bool) {
-    for btn in trafficLightButtons {
-      btn.alphaValue = visible ? 1.0 : 0.0
-    }
-    if visible {
-      reparentTrafficLights()
-    }
-  }
-
-  /// 把交通灯按钮重挂到窗口 contentView:
-  /// 与 Flutter 顶部工具栏条(40px 高, 上下间距对称各 8)垂直居中对齐。
-  private func reparentTrafficLights() {
-    guard let contentView = self.contentView, !trafficLightButtons.isEmpty else {
-      return
-    }
-    // 用窗口 frame 高度(而非 contentView.bounds, 全屏切换时 bounds 会滞后,
-    // 曾导致交通灯瞬间跑到窗口底部)
-    let windowHeight = self.frame.height
-    // 工具栏条: 顶部留 8, 高 40 → 中心距窗口顶 28
-    let topMargin: CGFloat = 8
-    let toolbarHeight: CGFloat = 40
-    let centerFromTop = topMargin + toolbarHeight / 2
-    // 交通灯整体左边距与右侧按钮到右边缘一致(16), 按钮间间距 8
-    let leftMargin: CGFloat = 16
-    let spacing: CGFloat = 8
-    var currentX = leftMargin
-
-    for btn in trafficLightButtons {
-      let size = btn.frame.size
-      if btn.superview !== contentView {
-        btn.removeFromSuperview()
-        contentView.addSubview(btn)
-      }
-      let y: CGFloat
-      if contentView.isFlipped {
-        // 原点在左上:y 直接是距顶距离
-        y = centerFromTop - size.height / 2
-      } else {
-        // 原点在左下:y 从窗口底部算起
-        y = windowHeight - centerFromTop - size.height / 2
-      }
-      btn.frame = CGRect(x: currentX, y: y, width: size.width, height: size.height)
-      currentX += size.width + spacing
-    }
-  }
-
-  /// 窗口尺寸变化时保存 frame(位置 + 大小),并保持交通灯对齐。
+  /// 窗口尺寸变化时保存 frame(位置 + 大小)。
   @objc private func windowDidResize(_ notification: Notification) {
     UserDefaults.standard.set(NSStringFromRect(self.frame), forKey: Self.frameKey)
-    reparentTrafficLights()
-  }
-
-  /// 进入/退出全屏后:macOS 会重置/隐藏交通灯,重新挂载并对齐显示。
-  @objc private func windowDidToggleFullScreen() {
-    DispatchQueue.main.async { [weak self] in
-      self?.reparentTrafficLights()
-      self?.setTrafficLightsVisible(true)
-    }
   }
 
   /// 把恢复的 frame 限制在可见屏幕内,避免显示器变化后窗口跑到屏幕外。
