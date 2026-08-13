@@ -505,7 +505,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            '共 ${_books.length} 本 · 按 ← / → 翻页,↑ / ↓ 切换章节',
+            '共 ${_books.length} 本',
             style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 24),
