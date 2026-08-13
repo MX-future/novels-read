@@ -23,8 +23,11 @@ class MainFlutterWindow: NSWindow {
     self.contentMinSize = NSSize(width: 600, height: 400)
 
     // 使用标准 macOS 标题栏,避免内容延伸到标题栏下方导致按钮被遮挡
-    self.titlebarAppearsTransparent = false
-    self.titleVisibility = .visible
+    // 沉浸式:标题栏透明 + 内容全尺寸延伸到标题栏,背景色由 Flutter 阅读背景决定,
+    // 工具栏按钮(搜索/设置/目录)由 Flutter 渲染在标题栏区域
+    self.titlebarAppearsTransparent = true
+    self.titleVisibility = .hidden
+    self.styleMask.insert(.fullSizeContentView)
     self.styleMask.insert(.titled)
     self.styleMask.insert(.miniaturizable)
     self.styleMask.insert(.resizable)

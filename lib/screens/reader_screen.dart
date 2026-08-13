@@ -312,7 +312,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   // 阅读主体内容
                   Padding(
                     padding: EdgeInsets.only(
-                      top: 28,
+                      // 顶部留出 macOS 标题栏(28) + 原留白(28),避免正文被交通灯/工具栏遮挡
+                      top: 28 + 28,
                       bottom: 28,
                       left: settings.padding,
                       right: settings.padding,
@@ -341,11 +342,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       },
                     ),
                   ),
-                  // 顶部工具栏:仅在鼠标靠近顶部 / 工具栏自身 hover 时显示
+                  // 顶部工具栏:放置在 macOS 标题栏区域,鼠标靠近顶部时显示
                   AnimatedPositioned(
                     duration: const Duration(milliseconds: 220),
                     curve: Curves.easeOutCubic,
-                    top: _topBarVisible ? 0 : -56,
+                    top: _topBarVisible ? 0 : -28,
                     left: 0,
                     right: 0,
                     child: MouseRegion(
@@ -434,19 +435,21 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   Widget _buildTopBar((Color, Color, Color, Color) colors) {
     return Container(
-      height: 56,
-      // 半透明背景: hover 显示工具栏时下方文字仍可隐约透出,不突兀遮挡
-      color: colors.$1.withValues(alpha: 0.88),
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      // 高度 = macOS 标题栏高度;背景与阅读背景一致,沉浸式时视觉上"消失"
+      height: 28,
+      color: colors.$1,
+      padding: const EdgeInsets.only(left: 8, right: 12),
       child: Row(
         children: [
+          // 左侧留出 macOS 交通灯按钮(红黄绿)区域
+          const SizedBox(width: 76),
           _buildIconButton(
             icon: Icons.arrow_back_rounded,
             tooltip: '返回书架 (Esc)',
             colors: colors,
             onTap: widget.onBack,
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               widget.book.title,
@@ -454,7 +457,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: colors.$3,
-                fontSize: 13,
+                fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -465,14 +468,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
             colors: colors,
             onTap: _showSearchPanel,
           ),
-          const SizedBox(width: 4),
           _buildIconButton(
             icon: Icons.text_fields_rounded,
             tooltip: '阅读设置',
             colors: colors,
             onTap: _showSettingsPanel,
           ),
-          const SizedBox(width: 4),
           _buildIconButton(
             icon: Icons.list_rounded,
             tooltip: '目录',
@@ -494,14 +495,16 @@ class _ReaderScreenState extends State<ReaderScreen> {
       message: tooltip,
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(6),
           hoverColor: colors.$1.hoverOverlay(),
           child: Container(
-            padding: const EdgeInsets.all(8),
-            child: Icon(icon, size: 18, color: colors.$3),
+            width: 28,
+            height: 28,
+            alignment: Alignment.center,
+            child: Icon(icon, size: 16, color: colors.$3),
           ),
         ),
       ),
