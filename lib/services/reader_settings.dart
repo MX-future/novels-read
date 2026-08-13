@@ -55,18 +55,36 @@ extension ReaderThemeX on ReaderTheme {
   }
 }
 
-/// 阅读器设置:字号、行距、边距、背景主题。
+/// 键盘方向键的控制模式。
+enum ArrowKeyMode {
+  /// 上/下:翻页,左/右:切章(默认)
+  pagingVertical,
+
+  /// 上/下:切章,左/右:翻页
+  chaptersVertical,
+}
+
+extension ArrowKeyModeX on ArrowKeyMode {
+  String get label => switch (this) {
+    ArrowKeyMode.pagingVertical => '上下翻页 · 左右切章',
+    ArrowKeyMode.chaptersVertical => '上下切章 · 左右翻页',
+  };
+}
+
+/// 阅读器设置:字号、行距、边距、背景主题、方向键模式。
 class ReaderSettings {
   final double fontSize;
   final double lineHeight;
   final double padding;
   final ReaderTheme theme;
+  final ArrowKeyMode arrowKeyMode;
 
   const ReaderSettings({
     this.fontSize = 17,
     this.lineHeight = 1.85,
     this.padding = 44,
     this.theme = ReaderTheme.white,
+    this.arrowKeyMode = ArrowKeyMode.pagingVertical,
   });
 
   ReaderSettings copyWith({
@@ -74,11 +92,13 @@ class ReaderSettings {
     double? lineHeight,
     double? padding,
     ReaderTheme? theme,
+    ArrowKeyMode? arrowKeyMode,
   }) => ReaderSettings(
     fontSize: fontSize ?? this.fontSize,
     lineHeight: lineHeight ?? this.lineHeight,
     padding: padding ?? this.padding,
     theme: theme ?? this.theme,
+    arrowKeyMode: arrowKeyMode ?? this.arrowKeyMode,
   );
 
   Map<String, dynamic> toJson() => {
@@ -86,14 +106,19 @@ class ReaderSettings {
     'lineHeight': lineHeight,
     'padding': padding,
     'theme': theme.index,
+    'arrowKeyMode': arrowKeyMode.index,
   };
 
-  factory ReaderSettings.fromJson(Map<String, dynamic> json) => ReaderSettings(
-    fontSize: (json['fontSize'] as num?)?.toDouble() ?? 17,
-    lineHeight: (json['lineHeight'] as num?)?.toDouble() ?? 1.85,
-    padding: (json['padding'] as num?)?.toDouble() ?? 44,
-    theme: ReaderTheme.values[(json['theme'] as int?) ?? 0],
-  );
+  factory ReaderSettings.fromJson(Map<String, dynamic> json) {
+    final arrowIndex = (json['arrowKeyMode'] as int?) ?? 0;
+    return ReaderSettings(
+      fontSize: (json['fontSize'] as num?)?.toDouble() ?? 17,
+      lineHeight: (json['lineHeight'] as num?)?.toDouble() ?? 1.85,
+      padding: (json['padding'] as num?)?.toDouble() ?? 44,
+      theme: ReaderTheme.values[(json['theme'] as int?) ?? 0],
+      arrowKeyMode: ArrowKeyMode.values[arrowIndex.clamp(0, ArrowKeyMode.values.length - 1)],
+    );
+  }
 
   static const _key = 'reader_settings_v1';
 

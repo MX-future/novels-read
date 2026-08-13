@@ -172,25 +172,34 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   /// 键位映射:
-  /// - 上 / 下:上一页 / 下一页
-  /// - 左 / 右:上一章 / 下一章
+  /// - 空格 / PageUp / PageDown:始终翻页
+  /// - 方向键:按设置的方向键模式控制(上下=翻页/切章,左右=切章/翻页)
+  /// - Esc:返回书架
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
     final key = event.logicalKey;
-    if (key == LogicalKeyboardKey.arrowDown ||
-        key == LogicalKeyboardKey.pageDown ||
+    final verticalPaging =
+        _settings.arrowKeyMode == ArrowKeyMode.pagingVertical;
+
+    // 空格 / PageUp / PageDown 始终用于翻页
+    if (key == LogicalKeyboardKey.pageDown ||
         key == LogicalKeyboardKey.space) {
       _nextPage();
       return KeyEventResult.handled;
-    } else if (key == LogicalKeyboardKey.arrowUp ||
-        key == LogicalKeyboardKey.pageUp) {
+    } else if (key == LogicalKeyboardKey.pageUp) {
       _prevPage();
       return KeyEventResult.handled;
+    } else if (key == LogicalKeyboardKey.arrowDown) {
+      verticalPaging ? _nextPage() : _nextChapter();
+      return KeyEventResult.handled;
+    } else if (key == LogicalKeyboardKey.arrowUp) {
+      verticalPaging ? _prevPage() : _prevChapter();
+      return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.arrowRight) {
-      _nextChapter();
+      verticalPaging ? _nextChapter() : _nextPage();
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.arrowLeft) {
-      _prevChapter();
+      verticalPaging ? _prevChapter() : _prevPage();
       return KeyEventResult.handled;
     } else if (key == LogicalKeyboardKey.escape) {
       widget.onBack();
@@ -1216,6 +1225,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
   late double _lineHeight;
   late double _padding;
   late ReaderTheme _theme;
+  late ArrowKeyMode _arrowMode;
 
   @override
   void initState() {
@@ -1224,6 +1234,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
     _lineHeight = widget.settings.lineHeight;
     _padding = widget.settings.padding;
     _theme = widget.settings.theme;
+    _arrowMode = widget.settings.arrowKeyMode;
   }
 
   Future<void> _update() async {
@@ -1233,6 +1244,7 @@ class _SettingsDialogState extends State<_SettingsDialog> {
         lineHeight: _lineHeight,
         padding: _padding,
         theme: _theme,
+        arrowKeyMode: _arrowMode,
       ),
     );
   }
@@ -1361,9 +1373,63 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                   );
                 }).toList(),
               ),
+              const SizedBox(height: 16),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '方向键',
+                  style: TextStyle(
+                    color: subtext,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
               const SizedBox(height: 8),
+              Row(
+                children: ArrowKeyMode.values.map((m) {
+                  final selected = m == _arrowMode;
+                  return Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() => _arrowMode = m);
+                          _update();
+                        },
+                        child: Container(
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? accent.withValues(alpha: 0.16)
+                                : bg.hoverOverlay(),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: selected
+                                  ? accent
+                                  : subtext.withValues(alpha: 0.3),
+                              width: selected ? 2 : 1,
+                            ),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            m.label,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: selected ? accent : text,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 12),
               Text(
-                '上 / 下:翻页    左 / 右:切章    Esc:返回',
+                '空格 / PageUp / PageDown:翻页    Esc:返回',
                 style: TextStyle(color: subtext, fontSize: 11),
               ),
             ],

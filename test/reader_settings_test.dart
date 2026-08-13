@@ -14,6 +14,7 @@ void main() {
       expect(settings.lineHeight, 1.85);
       expect(settings.padding, 44);
       expect(settings.theme, ReaderTheme.white);
+      expect(settings.arrowKeyMode, ArrowKeyMode.pagingVertical);
     });
 
     test('copyWith 只更新指定字段', () {
@@ -23,10 +24,16 @@ void main() {
       expect(updated.lineHeight, 1.85); // 未改
       expect(updated.padding, 44);
       expect(updated.theme, ReaderTheme.white);
+      expect(updated.arrowKeyMode, ArrowKeyMode.pagingVertical); // 未改
 
       final themed = updated.copyWith(theme: ReaderTheme.dark);
       expect(themed.theme, ReaderTheme.dark);
       expect(themed.fontSize, 20); // 保留
+
+      final keyed =
+          themed.copyWith(arrowKeyMode: ArrowKeyMode.chaptersVertical);
+      expect(keyed.arrowKeyMode, ArrowKeyMode.chaptersVertical);
+      expect(keyed.theme, ReaderTheme.dark); // 保留
     });
 
     test('toJson/fromJson 往返一致', () {
@@ -35,12 +42,14 @@ void main() {
         lineHeight: 2.0,
         padding: 32,
         theme: ReaderTheme.sepia,
+        arrowKeyMode: ArrowKeyMode.chaptersVertical,
       );
       final restored = ReaderSettings.fromJson(settings.toJson());
       expect(restored.fontSize, 21.5);
       expect(restored.lineHeight, 2.0);
       expect(restored.padding, 32);
       expect(restored.theme, ReaderTheme.sepia);
+      expect(restored.arrowKeyMode, ArrowKeyMode.chaptersVertical);
     });
 
     test('fromJson 缺失字段时使用默认值', () {
@@ -49,6 +58,12 @@ void main() {
       expect(settings.lineHeight, 1.85);
       expect(settings.padding, 44);
       expect(settings.theme, ReaderTheme.white);
+      expect(settings.arrowKeyMode, ArrowKeyMode.pagingVertical);
+    });
+
+    test('fromJson 非法 arrowKeyMode 索引被 clamp 到有效范围', () {
+      final settings = ReaderSettings.fromJson(const {'arrowKeyMode': 99});
+      expect(settings.arrowKeyMode, ArrowKeyMode.chaptersVertical);
     });
 
     test('fromJson 处理非法 theme 索引', () {
@@ -66,6 +81,7 @@ void main() {
         lineHeight: 2.2,
         padding: 28,
         theme: ReaderTheme.dark,
+        arrowKeyMode: ArrowKeyMode.chaptersVertical,
       );
       await ReaderSettings.save(settings);
       expect(ReaderSettings.current.value.theme, ReaderTheme.dark);
@@ -77,6 +93,8 @@ void main() {
       expect(ReaderSettings.current.value.lineHeight, 2.2);
       expect(ReaderSettings.current.value.padding, 28);
       expect(ReaderSettings.current.value.theme, ReaderTheme.dark);
+      expect(ReaderSettings.current.value.arrowKeyMode,
+          ArrowKeyMode.chaptersVertical);
     });
 
     test('load 在无存档时保持默认', () async {
