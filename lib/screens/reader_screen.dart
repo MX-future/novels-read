@@ -319,8 +319,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   // 阅读主体内容
                   Padding(
                     padding: EdgeInsets.only(
-                      // 顶部留出 macOS 标题栏(40) + 章节标题上间距(14, 比之前 28 更紧凑)
-                      top: 40 + 14,
+                      // 顶部: 工具栏上间距14 + 工具栏40 + 工具栏下间距14 = 68 (上下对称)
+                      top: 14 + 40 + 14,
                       bottom: 28,
                       left: settings.padding,
                       right: settings.padding,
@@ -349,11 +349,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       },
                     ),
                   ),
-                  // 顶部工具栏:放置在 macOS 标题栏区域,鼠标靠近顶部时显示
+                  // 顶部工具栏:放置在 macOS 标题栏区域,上下间距对称(上方留 14, 与下方一致)
                   AnimatedPositioned(
                     duration: const Duration(milliseconds: 220),
                     curve: Curves.easeOutCubic,
-                    top: _topBarVisible ? 0 : -40,
+                    top: _topBarVisible ? 14 : -40,
                     left: 0,
                     right: 0,
                     child: _buildTopBar(colors),
