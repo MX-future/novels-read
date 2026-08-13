@@ -35,16 +35,17 @@ class MainFlutterWindow: NSWindow {
     self.styleMask.insert(.miniaturizable)
     self.styleMask.insert(.resizable)
 
-    // 保存交通灯按钮引用,初始隐藏(由 Flutter 阅读界面控制显示)
+    // 保存交通灯按钮引用,默认显示(书架页);阅读界面进入时由 Flutter 隐藏
     trafficLightButtons = [
       standardWindowButton(.closeButton),
       standardWindowButton(.miniaturizeButton),
       standardWindowButton(.zoomButton),
     ].compactMap { $0 }
-    setTrafficLightsVisible(false)
+    reparentTrafficLights()
     // 首次布局后重挂交通灯,确保位置与 40px 工具栏对齐
     DispatchQueue.main.async { [weak self] in
       self?.reparentTrafficLights()
+      self?.setTrafficLightsVisible(true)
     }
 
     // 监听窗口尺寸变化,保存 frame + 调整交通灯对齐
@@ -52,6 +53,20 @@ class MainFlutterWindow: NSWindow {
       self,
       selector: #selector(windowDidResize(_:)),
       name: NSWindow.didResizeNotification,
+      object: self,
+    )
+
+    // 全屏时 macOS 会隐藏交通灯,进入/退出全屏后重新挂载并显示
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(windowDidToggleFullScreen),
+      name: NSWindow.didEnterFullScreenNotification,
+      object: self,
+    )
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(windowDidToggleFullScreen),
+      name: NSWindow.didExitFullScreenNotification,
       object: self,
     )
 
@@ -131,6 +146,14 @@ class MainFlutterWindow: NSWindow {
   @objc private func windowDidResize(_ notification: Notification) {
     UserDefaults.standard.set(NSStringFromRect(self.frame), forKey: Self.frameKey)
     reparentTrafficLights()
+  }
+
+  /// 进入/退出全屏后:macOS 会重置/隐藏交通灯,重新挂载并对齐显示。
+  @objc private func windowDidToggleFullScreen() {
+    DispatchQueue.main.async { [weak self] in
+      self?.reparentTrafficLights()
+      self?.setTrafficLightsVisible(true)
+    }
   }
 
   /// 把恢复的 frame 限制在可见屏幕内,避免显示器变化后窗口跑到屏幕外。
