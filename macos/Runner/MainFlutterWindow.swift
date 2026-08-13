@@ -5,6 +5,9 @@ class MainFlutterWindow: NSWindow {
   /// UserDefaults 键:保存窗口 frame(位置 + 大小)。
   private static let frameKey = "windowFrame"
 
+  /// 红黄绿交通灯按钮引用,沉浸式时隐藏、hover 顶部时显示。
+  private var trafficLightButtons: [NSButton] = []
+
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
     let windowFrame = CGRect(x: 200, y: 160, width: 1180, height: 760)
@@ -32,6 +35,14 @@ class MainFlutterWindow: NSWindow {
     self.styleMask.insert(.miniaturizable)
     self.styleMask.insert(.resizable)
 
+    // 保存交通灯按钮引用,初始隐藏(由 Flutter 阅读界面控制显示)
+    trafficLightButtons = [
+      standardWindowButton(.closeButton),
+      standardWindowButton(.miniaturizeButton),
+      standardWindowButton(.zoomButton),
+    ].compactMap { $0 }
+    setTrafficLightsVisible(false)
+
     // 监听窗口尺寸变化,保存 frame 供下次启动恢复
     NotificationCenter.default.addObserver(
       self,
@@ -40,7 +51,7 @@ class MainFlutterWindow: NSWindow {
       object: self,
     )
 
-    // 注册窗口标题通道:Flutter 侧切换窗口标题(阅读时显示小说名,返回显示应用名)
+    // 注册窗口标题通道:Flutter 侧切换窗口标题与交通灯显示
     let channel = FlutterMethodChannel(
       name: "com.reader.novelReader/window",
       binaryMessenger: flutterViewController.engine.binaryMessenger,
@@ -52,6 +63,11 @@ class MainFlutterWindow: NSWindow {
           self?.title = title
         }
         result(nil)
+      case "setTrafficLightsVisible":
+        if let visible = call.arguments as? Bool {
+          self?.setTrafficLightsVisible(visible)
+        }
+        result(nil)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -60,6 +76,13 @@ class MainFlutterWindow: NSWindow {
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     super.awakeFromNib()
+  }
+
+  /// 控制红黄绿交通灯按钮的显示/隐藏(沉浸式时隐藏, hover 顶部时显示)。
+  private func setTrafficLightsVisible(_ visible: Bool) {
+    for btn in trafficLightButtons {
+      btn.alphaValue = visible ? 1.0 : 0.0
+    }
   }
 
   /// 窗口尺寸变化时保存 frame(位置 + 大小)。

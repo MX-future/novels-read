@@ -44,8 +44,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
   @override
   void initState() {
     super.initState();
-    // 窗口标题显示小说名(内容页不再显示标题)
+    // 窗口标题显示小说名(内容页不再显示标题);沉浸式:隐藏交通灯
     _windowChannel.invokeMethod('setTitle', widget.book.title);
+    _windowChannel.invokeMethod('setTrafficLightsVisible', false);
     _init();
     ReaderSettings.current.addListener(_onSettingsChanged);
   }
@@ -78,8 +79,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _uiHideTimer?.cancel();
     _topBarHideTimer?.cancel();
     _flushProgress();
-    // 返回书架时恢复窗口标题
+    // 返回书架时恢复窗口标题 + 显示交通灯
     _windowChannel.invokeMethod('setTitle', '书架');
+    _windowChannel.invokeMethod('setTrafficLightsVisible', true);
     ReaderSettings.current.removeListener(_onSettingsChanged);
     _focusNode.dispose();
     super.dispose();
@@ -110,17 +112,21 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (_uiVisible && mounted) setState(() => _uiVisible = false);
   }
 
-  /// 显示顶部工具栏(仅当鼠标在顶部区域或工具栏自身上)
+  /// 显示顶部工具栏(仅当鼠标在顶部区域或工具栏自身上),并联动显示交通灯
   void _showTopBar() {
     _topBarHideTimer?.cancel();
-    if (!_topBarVisible && mounted) setState(() => _topBarVisible = true);
+    if (!_topBarVisible && mounted) {
+      setState(() => _topBarVisible = true);
+    }
+    _windowChannel.invokeMethod('setTrafficLightsVisible', true);
   }
 
-  /// 延迟隐藏顶部工具栏(给移出工具栏 200ms 缓冲,避免抖动)
+  /// 延迟隐藏顶部工具栏(给移出工具栏 200ms 缓冲,避免抖动),并联动隐藏交通灯
   void _scheduleHideTopBar() {
     _topBarHideTimer?.cancel();
     _topBarHideTimer = Timer(const Duration(milliseconds: 200), () {
       if (mounted) setState(() => _topBarVisible = false);
+      _windowChannel.invokeMethod('setTrafficLightsVisible', false);
     });
   }
 
@@ -299,9 +305,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
           child: Scaffold(
             backgroundColor: colors.$1,
             body: MouseRegion(
-              // 鼠标进入顶部 80px 区域才显示顶部工具栏;其余位置只触发底部工具栏逻辑
+              // 鼠标进入顶部区域(标题栏高度+缓冲)才显示顶部工具栏与交通灯
               onHover: (event) {
-                if (event.position.dy < 80) {
+                if (event.position.dy < 100) {
                   _showTopBar();
                 }
                 _showUi();
@@ -312,8 +318,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   // 阅读主体内容
                   Padding(
                     padding: EdgeInsets.only(
-                      // 顶部留出 macOS 标题栏(28) + 原留白(28),避免正文被交通灯/工具栏遮挡
-                      top: 28 + 28,
+                      // 顶部留出 macOS 标题栏(40) + 原留白(28),避免正文被交通灯/工具栏遮挡
+                      top: 40 + 28,
                       bottom: 28,
                       left: settings.padding,
                       right: settings.padding,
@@ -346,7 +352,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   AnimatedPositioned(
                     duration: const Duration(milliseconds: 220),
                     curve: Curves.easeOutCubic,
-                    top: _topBarVisible ? 0 : -28,
+                    top: _topBarVisible ? 0 : -40,
                     left: 0,
                     right: 0,
                     child: MouseRegion(
@@ -435,21 +441,21 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   Widget _buildTopBar((Color, Color, Color, Color) colors) {
     return Container(
-      // 高度 = macOS 标题栏高度;背景与阅读背景一致,沉浸式时视觉上"消失"
-      height: 28,
+      // 高度 = macOS 标题栏高度(调大);背景与阅读背景一致,沉浸式时视觉上"消失"
+      height: 40,
       color: colors.$1,
-      padding: const EdgeInsets.only(left: 8, right: 12),
+      padding: const EdgeInsets.only(left: 12, right: 16),
       child: Row(
         children: [
-          // 左侧留出 macOS 交通灯按钮(红黄绿)区域
-          const SizedBox(width: 76),
+          // 左侧留出 macOS 交通灯按钮(红黄绿)区域(间距加大)
+          const SizedBox(width: 84),
           _buildIconButton(
             icon: Icons.arrow_back_rounded,
             tooltip: '返回书架 (Esc)',
             colors: colors,
             onTap: widget.onBack,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           Expanded(
             child: Text(
               widget.book.title,
@@ -457,23 +463,26 @@ class _ReaderScreenState extends State<ReaderScreen> {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: colors.$3,
-                fontSize: 12,
+                fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
             ),
           ),
+          const SizedBox(width: 12),
           _buildIconButton(
             icon: Icons.search_rounded,
             tooltip: '搜索',
             colors: colors,
             onTap: _showSearchPanel,
           ),
+          const SizedBox(width: 8),
           _buildIconButton(
             icon: Icons.text_fields_rounded,
             tooltip: '阅读设置',
             colors: colors,
             onTap: _showSettingsPanel,
           ),
+          const SizedBox(width: 8),
           _buildIconButton(
             icon: Icons.list_rounded,
             tooltip: '目录',
@@ -501,10 +510,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
           borderRadius: BorderRadius.circular(6),
           hoverColor: colors.$1.hoverOverlay(),
           child: Container(
-            width: 28,
-            height: 28,
+            width: 32,
+            height: 32,
             alignment: Alignment.center,
-            child: Icon(icon, size: 16, color: colors.$3),
+            child: Icon(icon, size: 18, color: colors.$3),
           ),
         ),
       ),
