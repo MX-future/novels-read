@@ -28,10 +28,14 @@ extension ReaderThemeX on ReaderTheme {
         );
       case ReaderTheme.sepia:
         return (
-          const Color(0xFFF6EEDD),
-          const Color(0xFF5B4636),
-          const Color(0xFF8A7556),
-          const Color(0xFF9A6B33),
+          // 橙金暖色背景 (类似第二张参考图/kindle 暖屏)
+          const Color(0xFFF6E4C2),
+          // 深棕橙文字
+          const Color(0xFF5A3A1A),
+          // 暖棕次要文字
+          const Color(0xFFA07241),
+          // 橙金强调色
+          const Color(0xFFC97A2C),
         );
       case ReaderTheme.dark:
         return (

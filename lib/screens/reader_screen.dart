@@ -31,6 +31,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Timer? _saveDebouncer;
   bool _uiVisible = false;
   Timer? _uiHideTimer;
+  bool _topBarVisible = false;
+  Timer? _topBarHideTimer;
   String? _highlightKeyword;
 
   ReaderSettings get _settings => ReaderSettings.current.value;
@@ -68,6 +70,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   void dispose() {
     _saveDebouncer?.cancel();
     _uiHideTimer?.cancel();
+    _topBarHideTimer?.cancel();
     _flushProgress();
     ReaderSettings.current.removeListener(_onSettingsChanged);
     _focusNode.dispose();
@@ -97,6 +100,20 @@ class _ReaderScreenState extends State<ReaderScreen> {
   void _hideUi() {
     _uiHideTimer?.cancel();
     if (_uiVisible && mounted) setState(() => _uiVisible = false);
+  }
+
+  /// 显示顶部工具栏(仅当鼠标在顶部区域或工具栏自身上)
+  void _showTopBar() {
+    _topBarHideTimer?.cancel();
+    if (!_topBarVisible && mounted) setState(() => _topBarVisible = true);
+  }
+
+  /// 延迟隐藏顶部工具栏(给移出工具栏 200ms 缓冲,避免抖动)
+  void _scheduleHideTopBar() {
+    _topBarHideTimer?.cancel();
+    _topBarHideTimer = Timer(const Duration(milliseconds: 200), () {
+      if (mounted) setState(() => _topBarVisible = false);
+    });
   }
 
   TextStyle _textStyle() => TextStyle(
@@ -275,7 +292,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
           child: Scaffold(
             backgroundColor: colors.$1,
             body: MouseRegion(
-              onHover: (_) => _showUi(),
+              // 鼠标进入顶部 80px 区域才显示顶部工具栏;其余位置只触发底部工具栏逻辑
+              onHover: (event) {
+                if (event.position.dy < 80) {
+                  _showTopBar();
+                }
+                _showUi();
+              },
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -311,14 +334,18 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       },
                     ),
                   ),
-                  // 顶部工具栏(悬浮显示)
+                  // 顶部工具栏:仅在鼠标靠近顶部 / 工具栏自身 hover 时显示
                   AnimatedPositioned(
                     duration: const Duration(milliseconds: 220),
                     curve: Curves.easeOutCubic,
-                    top: _uiVisible ? 0 : -56,
+                    top: _topBarVisible ? 0 : -56,
                     left: 0,
                     right: 0,
-                    child: _buildTopBar(colors),
+                    child: MouseRegion(
+                      onEnter: (_) => _showTopBar(),
+                      onExit: (_) => _scheduleHideTopBar(),
+                      child: _buildTopBar(colors),
+                    ),
                   ),
                   // 底部工具栏(悬浮显示)
                   AnimatedPositioned(
