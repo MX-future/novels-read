@@ -309,6 +309,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
               onHover: (event) {
                 if (event.position.dy < 100) {
                   _showTopBar();
+                } else if (_topBarVisible) {
+                  // 鼠标离开顶部区域,延迟隐藏
+                  _scheduleHideTopBar();
                 }
                 _showUi();
               },
@@ -444,50 +447,74 @@ class _ReaderScreenState extends State<ReaderScreen> {
       // 高度 = macOS 标题栏高度(调大);背景与阅读背景一致,沉浸式时视觉上"消失"
       height: 40,
       color: colors.$1,
-      padding: const EdgeInsets.only(left: 12, right: 16),
-      child: Row(
+      child: Stack(
         children: [
-          // 左侧留出 macOS 交通灯按钮(红黄绿)区域(间距加大)
-          const SizedBox(width: 84),
-          _buildIconButton(
-            icon: Icons.arrow_back_rounded,
-            tooltip: '返回书架 (Esc)',
-            colors: colors,
-            onTap: widget.onBack,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              widget.book.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: colors.$3,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+          // 小说名绝对居中显示
+          Positioned.fill(
+            child: Center(
+              child: Padding(
+                // 左右留出按钮区域,避免书名与按钮重叠
+                padding: const EdgeInsets.symmetric(horizontal: 220),
+                child: Text(
+                  widget.book.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: colors.$3,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          _buildIconButton(
-            icon: Icons.search_rounded,
-            tooltip: '搜索',
-            colors: colors,
-            onTap: _showSearchPanel,
+          // 左侧:交通灯占位 + 返回按钮
+          Positioned(
+            left: 12,
+            top: 0,
+            bottom: 0,
+            child: Row(
+              children: [
+                const SizedBox(width: 72),
+                _buildIconButton(
+                  icon: Icons.arrow_back_rounded,
+                  tooltip: '返回书架 (Esc)',
+                  colors: colors,
+                  onTap: widget.onBack,
+                ),
+              ],
+            ),
           ),
-          const SizedBox(width: 8),
-          _buildIconButton(
-            icon: Icons.text_fields_rounded,
-            tooltip: '阅读设置',
-            colors: colors,
-            onTap: _showSettingsPanel,
-          ),
-          const SizedBox(width: 8),
-          _buildIconButton(
-            icon: Icons.list_rounded,
-            tooltip: '目录',
-            colors: colors,
-            onTap: _showChapterList,
+          // 右侧:搜索 / 设置 / 目录
+          Positioned(
+            right: 16,
+            top: 0,
+            bottom: 0,
+            child: Row(
+              children: [
+                _buildIconButton(
+                  icon: Icons.search_rounded,
+                  tooltip: '搜索',
+                  colors: colors,
+                  onTap: _showSearchPanel,
+                ),
+                const SizedBox(width: 8),
+                _buildIconButton(
+                  icon: Icons.text_fields_rounded,
+                  tooltip: '阅读设置',
+                  colors: colors,
+                  onTap: _showSettingsPanel,
+                ),
+                const SizedBox(width: 8),
+                _buildIconButton(
+                  icon: Icons.list_rounded,
+                  tooltip: '目录',
+                  colors: colors,
+                  onTap: _showChapterList,
+                ),
+              ],
+            ),
           ),
         ],
       ),

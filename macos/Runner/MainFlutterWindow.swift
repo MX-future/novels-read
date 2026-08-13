@@ -43,7 +43,7 @@ class MainFlutterWindow: NSWindow {
     ].compactMap { $0 }
     setTrafficLightsVisible(false)
 
-    // 监听窗口尺寸变化,保存 frame 供下次启动恢复
+    // 监听窗口尺寸变化,保存 frame + 调整交通灯对齐
     NotificationCenter.default.addObserver(
       self,
       selector: #selector(windowDidResize(_:)),
@@ -83,11 +83,26 @@ class MainFlutterWindow: NSWindow {
     for btn in trafficLightButtons {
       btn.alphaValue = visible ? 1.0 : 0.0
     }
+    if visible {
+      adjustTrafficLightsAlignment()
+    }
   }
 
-  /// 窗口尺寸变化时保存 frame(位置 + 大小)。
+  /// 调整交通灯按钮垂直居中于 Flutter 工具栏(40px 高)。
+  private func adjustTrafficLightsAlignment() {
+    guard !trafficLightButtons.isEmpty else { return }
+    for btn in trafficLightButtons {
+      var frame = btn.frame
+      // 工具栏高度 40,按钮垂直居中 (按钮自身高度约 14~16)
+      frame.origin.y = (40 - frame.height) / 2
+      btn.frame = frame
+    }
+  }
+
+  /// 窗口尺寸变化时保存 frame(位置 + 大小),并保持交通灯对齐。
   @objc private func windowDidResize(_ notification: Notification) {
     UserDefaults.standard.set(NSStringFromRect(self.frame), forKey: Self.frameKey)
+    adjustTrafficLightsAlignment()
   }
 
   /// 把恢复的 frame 限制在可见屏幕内,避免显示器变化后窗口跑到屏幕外。
