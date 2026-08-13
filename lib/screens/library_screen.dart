@@ -214,7 +214,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (collapsed) {
       // 收缩状态:只显示居中的展开按钮 + 导入按钮
       return Container(
-        padding: const EdgeInsets.fromLTRB(12, 28, 12, 16),
+        // 顶部留出交通灯区域(40px)
+        padding: const EdgeInsets.fromLTRB(12, 68, 12, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -226,7 +227,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
       );
     }
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 28, 12, 16),
+      // 顶部留出交通灯区域(40px)
+      padding: const EdgeInsets.fromLTRB(20, 68, 12, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -406,6 +408,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Widget _buildEmptyState() {
     return Container(
       color: AppTheme.background,
+      // 顶部留出交通灯区域(40px),让空书库提示整体下移不被遮挡
+      padding: const EdgeInsets.only(top: 40),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -491,7 +495,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Widget _buildGridView() {
     return Container(
       color: AppTheme.background,
-      padding: const EdgeInsets.fromLTRB(48, 36, 48, 36),
+      // 顶部留出交通灯区域(40px)
+      padding: const EdgeInsets.fromLTRB(48, 76, 48, 36),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

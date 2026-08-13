@@ -1,15 +1,15 @@
-# novel_reader (书架)
+# novel_reader (阅读)
 
 Flutter macOS 小说阅读器：本地书架、EPUB 解析、分页阅读、阅读进度与设置持久化。
 
-应用名：**书架**
+应用名：**阅读**
 
 ## 构建与运行
 
 使用项目脚本（自动处理国内 pub 镜像 + Xcode 路径）：
 
 ```bash
-# 构建 Release 版本到 build/macos/Build/Products/Release/书架.app
+# 构建 Release 版本到 build/macos/Bßuild/Products/Release/书架.app
 bash scripts/build_macos.sh
 
 # Debug 构建
