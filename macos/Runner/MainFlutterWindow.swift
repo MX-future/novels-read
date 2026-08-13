@@ -103,9 +103,10 @@ class MainFlutterWindow: NSWindow {
     let topMargin: CGFloat = 8
     let toolbarHeight: CGFloat = 40
     let centerFromTop = topMargin + toolbarHeight / 2
-    // 与垂直间距一致: 左右间距 = 上下间距 8
-    let margin: CGFloat = 8
-    var currentX = margin
+    // 交通灯整体左边距与右侧按钮到右边缘一致(16), 按钮间间距 8
+    let leftMargin: CGFloat = 16
+    let spacing: CGFloat = 8
+    var currentX = leftMargin
 
     for btn in trafficLightButtons {
       let size = btn.frame.size
@@ -122,7 +123,7 @@ class MainFlutterWindow: NSWindow {
         y = bounds.height - centerFromTop - size.height / 2
       }
       btn.frame = CGRect(x: currentX, y: y, width: size.width, height: size.height)
-      currentX += size.width + margin
+      currentX += size.width + spacing
     }
   }
 
