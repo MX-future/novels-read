@@ -11,7 +11,7 @@ void main() {
     test('默认值', () {
       const settings = ReaderSettings();
       expect(settings.fontSize, 17);
-      expect(settings.lineHeight, 1.85);
+      expect(settings.lineHeight, 2.0);
       expect(settings.padding, 44);
       expect(settings.theme, ReaderTheme.white);
       expect(settings.arrowKeyMode, ArrowKeyMode.pagingVertical);
@@ -21,7 +21,7 @@ void main() {
       const settings = ReaderSettings();
       final updated = settings.copyWith(fontSize: 20);
       expect(updated.fontSize, 20);
-      expect(updated.lineHeight, 1.85); // 未改
+      expect(updated.lineHeight, 2.0); // 未改
       expect(updated.padding, 44);
       expect(updated.theme, ReaderTheme.white);
       expect(updated.arrowKeyMode, ArrowKeyMode.pagingVertical); // 未改
@@ -55,7 +55,7 @@ void main() {
     test('fromJson 缺失字段时使用默认值', () {
       final settings = ReaderSettings.fromJson(const {});
       expect(settings.fontSize, 17);
-      expect(settings.lineHeight, 1.85);
+      expect(settings.lineHeight, 2.0);
       expect(settings.padding, 44);
       expect(settings.theme, ReaderTheme.white);
       expect(settings.arrowKeyMode, ArrowKeyMode.pagingVertical);

@@ -85,7 +85,7 @@ class ReaderSettings {
 
   const ReaderSettings({
     this.fontSize = 17,
-    this.lineHeight = 1.85,
+    this.lineHeight = 2.0,
     this.padding = 44,
     this.theme = ReaderTheme.white,
     this.arrowKeyMode = ArrowKeyMode.pagingVertical,
@@ -117,7 +117,7 @@ class ReaderSettings {
     final arrowIndex = (json['arrowKeyMode'] as int?) ?? 0;
     return ReaderSettings(
       fontSize: (json['fontSize'] as num?)?.toDouble() ?? 17,
-      lineHeight: (json['lineHeight'] as num?)?.toDouble() ?? 1.85,
+      lineHeight: (json['lineHeight'] as num?)?.toDouble() ?? 2.0,
       padding: (json['padding'] as num?)?.toDouble() ?? 44,
       theme: ReaderTheme.values[(json['theme'] as int?) ?? 0],
       arrowKeyMode: ArrowKeyMode.values[arrowIndex.clamp(0, ArrowKeyMode.values.length - 1)],

@@ -157,11 +157,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
     await Future.delayed(const Duration(milliseconds: 30));
     if (!mounted) return;
     final chapter = widget.book.chapters[_chapterIndex];
-    // 页面不再显示章节标题,正文直接占满整个内容区
+    // 页面顶部显示章节标题,分页须减去标题+底部间距(避免末行被截断)
+    final titleHeight = _titleReservedHeight(_pageSize.width);
+    final textMaxHeight = math.max(80.0, _pageSize.height - titleHeight);
     final pages = TextPaginator.paginate(
       text: chapter.content,
       maxWidth: _pageSize.width,
-      maxHeight: _pageSize.height,
+      maxHeight: textMaxHeight,
       style: _textStyle(),
     );
     _pagesCache[_chapterIndex] = pages;
@@ -171,6 +173,26 @@ class _ReaderScreenState extends State<ReaderScreen> {
       _ready = true;
       _pageIndex = _pageIndex.clamp(0, math.max(0, pages.length - 1));
     });
+  }
+
+  /// 测量章节标题占用的高度(最多 2 行 + 24px 间距),与 _PageContent 渲染一致。
+  double _titleReservedHeight(double maxWidth) {
+    final title = widget.book.chapters[_chapterIndex].title;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: title,
+        style: const TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.5,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 2,
+    )..layout(maxWidth: maxWidth);
+    final h = painter.height + 24;
+    painter.dispose();
+    return h;
   }
 
   /// 键位映射:
@@ -332,11 +354,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       child: _buildTopBar(colors),
                     ),
                   ),
-                  // 底部工具栏(悬浮显示)
+                  // 底部极简页码:常驻显示(沉浸式)
                   AnimatedPositioned(
                     duration: const Duration(milliseconds: 220),
                     curve: Curves.easeOutCubic,
-                    bottom: _uiVisible ? 0 : -44,
+                    bottom: 8,
                     left: 0,
                     right: 0,
                     child: _buildBottomBar(colors),
@@ -345,7 +367,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   AnimatedPositioned(
                     duration: const Duration(milliseconds: 220),
                     curve: Curves.easeOutCubic,
-                    left: _uiVisible ? 20 : -56,
+                    // 沉浸式:左右按钮常驻半透明可见,hover 时变明显
+                    left: 8,
                     top: 0,
                     bottom: 0,
                     child: Center(
@@ -360,7 +383,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   AnimatedPositioned(
                     duration: const Duration(milliseconds: 220),
                     curve: Curves.easeOutCubic,
-                    right: _uiVisible ? 20 : -56,
+                    right: 8,
                     top: 0,
                     bottom: 0,
                     child: Center(
@@ -390,17 +413,18 @@ class _ReaderScreenState extends State<ReaderScreen> {
       child: Tooltip(
         message: icon == Icons.chevron_left_rounded ? '上一页' : '下一页',
         child: Material(
-          color: colors.$1.withValues(alpha: 0.82),
+          // 常驻半透明按钮: 平时隐约可见, hover 时变明显
+          color: colors.$1.withValues(alpha: 0.35),
           borderRadius: BorderRadius.circular(10),
           child: InkWell(
             onTap: onTap,
             borderRadius: BorderRadius.circular(10),
-            hoverColor: colors.$1.hoverOverlay(),
+            hoverColor: colors.$1.withValues(alpha: 0.82),
             child: Container(
-              width: 42,
-              height: 84,
+              width: 36,
+              height: 72,
               alignment: Alignment.center,
-              child: Icon(icon, size: 28, color: colors.$3),
+              child: Icon(icon, size: 26, color: colors.$3),
             ),
           ),
         ),
@@ -501,6 +525,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     // 无动画直接替换内容,避免翻页/切章时的跳动
     return _PageContent(
       key: ValueKey('page_${_chapterIndex}_$_pageIndex'),
+      chapterTitle: widget.book.chapters[_chapterIndex].title,
       text: page,
       style: _textStyle(),
       colors: colors,
@@ -511,45 +536,29 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Widget _buildBottomBar((Color, Color, Color, Color) colors) {
     final totalPages = _currentPages.isEmpty ? 1 : _currentPages.length;
     final safePage = _currentPages.isEmpty ? 0 : _pageIndex + 1;
-    final chapterProgress = _currentPages.isEmpty
-        ? 0.0
-        : (_pageIndex + 1) / totalPages;
-    final bookProgress = widget.book.chapters.isEmpty
-        ? 0.0
-        : (_chapterIndex + chapterProgress) / widget.book.chapters.length;
+    // 章节剩余页数(不含当前页,含最后一页则提示 0)
+    final remain = totalPages - safePage;
 
     return Container(
       height: 44,
-      color: colors.$1.withValues(alpha: 0.88),
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      // 极简底部: 左页码 + 右剩余页数(参考图风格)
+      color: colors.$1.withValues(alpha: 0.0), // 透明,让正文自然过渡
+      padding: const EdgeInsets.symmetric(horizontal: 28),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            '第 ${_chapterIndex + 1} / ${widget.book.chapters.length} 章',
-            style: TextStyle(color: colors.$3, fontSize: 11),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Tooltip(
-              message: '整书进度 ${(bookProgress * 100).toStringAsFixed(1)}%',
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(2),
-                child: LinearProgressIndicator(
-                  value: bookProgress.clamp(0.0, 1.0),
-                  minHeight: 3,
-                  backgroundColor: colors.$1.computeTrack(),
-                  valueColor: AlwaysStoppedAnimation(colors.$4),
-                ),
-              ),
+            '$safePage / $totalPages 页',
+            style: TextStyle(
+              color: colors.$3.withValues(alpha: 0.65),
+              fontSize: 12,
             ),
           ),
-          const SizedBox(width: 16),
           Text(
-            '$safePage / $totalPages',
+            '本章还剩 $remain 页',
             style: TextStyle(
-              color: colors.$3,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
+              color: colors.$3.withValues(alpha: 0.65),
+              fontSize: 12,
             ),
           ),
         ],
@@ -654,6 +663,7 @@ extension on Color {
 }
 
 class _PageContent extends StatelessWidget {
+  final String chapterTitle;
   final String text;
   final TextStyle style;
   final (Color, Color, Color, Color) colors;
@@ -661,6 +671,7 @@ class _PageContent extends StatelessWidget {
 
   const _PageContent({
     super.key,
+    required this.chapterTitle,
     required this.text,
     required this.style,
     required this.colors,
@@ -669,8 +680,28 @@ class _PageContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 顶部不再显示章节标题(窗口标题已显示书名),正文占满整页
-    return _buildHighlightedText();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // 章节标题(沉浸式风格:居中大字加粗,与窗口标题的书名区分)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 24),
+          child: Text(
+            chapterTitle,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: colors.$2,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+        Expanded(child: _buildHighlightedText()),
+      ],
+    );
   }
 
   Widget _buildHighlightedText() {
