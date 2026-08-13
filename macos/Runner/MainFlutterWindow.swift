@@ -113,7 +113,9 @@ class MainFlutterWindow: NSWindow {
     guard let contentView = self.contentView, !trafficLightButtons.isEmpty else {
       return
     }
-    let bounds = contentView.bounds
+    // 用窗口 frame 高度(而非 contentView.bounds, 全屏切换时 bounds 会滞后,
+    // 曾导致交通灯瞬间跑到窗口底部)
+    let windowHeight = self.frame.height
     // 工具栏条: 顶部留 8, 高 40 → 中心距窗口顶 28
     let topMargin: CGFloat = 8
     let toolbarHeight: CGFloat = 40
@@ -135,7 +137,7 @@ class MainFlutterWindow: NSWindow {
         y = centerFromTop - size.height / 2
       } else {
         // 原点在左下:y 从窗口底部算起
-        y = bounds.height - centerFromTop - size.height / 2
+        y = windowHeight - centerFromTop - size.height / 2
       }
       btn.frame = CGRect(x: currentX, y: y, width: size.width, height: size.height)
       currentX += size.width + spacing
