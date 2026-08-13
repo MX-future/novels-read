@@ -319,8 +319,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   // 阅读主体内容
                   Padding(
                     padding: EdgeInsets.only(
-                      // 顶部留出 macOS 标题栏(40) + 原留白(28),避免正文被交通灯/工具栏遮挡
-                      top: 40 + 28,
+                      // 顶部留出 macOS 标题栏(40) + 章节标题上间距(14, 比之前 28 更紧凑)
+                      top: 40 + 14,
                       bottom: 28,
                       left: settings.padding,
                       right: settings.padding,

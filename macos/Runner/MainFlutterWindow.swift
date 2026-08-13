@@ -92,20 +92,21 @@ class MainFlutterWindow: NSWindow {
     }
   }
 
-  /// 把交通灯按钮重挂到窗口 contentView,只调整垂直对齐:
-  /// 垂直居中于 Flutter 顶部工具栏(40px 高),x/间距保持 macOS 默认。
+  /// 把交通灯按钮重挂到窗口 contentView:
+  /// 垂直居中于 Flutter 顶部工具栏(40px 高),左右间距与上下间距一致(12)。
   private func reparentTrafficLights() {
     guard let contentView = self.contentView, !trafficLightButtons.isEmpty else {
       return
     }
     let toolbarHeight: CGFloat = 40
     let bounds = contentView.bounds
+    // 与垂直间距一致: 上下留白 = (40 - 按钮高)/2, 左右也取该值
+    let margin = (toolbarHeight - (trafficLightButtons.first?.frame.height ?? 16)) / 2
+    let spacing = margin
+    var currentX = margin
+
     for btn in trafficLightButtons {
       let size = btn.frame.size
-      // 保持默认 x(间距), 仅首次重挂时记录
-      let x = btn.superview === contentView
-        ? btn.frame.minX
-        : btn.convert(btn.bounds.origin, to: contentView).x
       if btn.superview !== contentView {
         btn.removeFromSuperview()
         contentView.addSubview(btn)
@@ -120,7 +121,8 @@ class MainFlutterWindow: NSWindow {
         // 原点在左下:y 从窗口底部算起
         y = bounds.height - centerFromTop - size.height / 2
       }
-      btn.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
+      btn.frame = CGRect(x: currentX, y: y, width: size.width, height: size.height)
+      currentX += size.width + spacing
     }
   }
 
