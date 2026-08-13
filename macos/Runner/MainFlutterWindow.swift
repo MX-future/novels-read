@@ -93,18 +93,18 @@ class MainFlutterWindow: NSWindow {
   }
 
   /// 把交通灯按钮重挂到窗口 contentView:
-  /// 与 Flutter 顶部工具栏条(40px 高, 上下间距对称各 14)垂直居中对齐。
+  /// 与 Flutter 顶部工具栏条(40px 高, 上下间距对称各 8)垂直居中对齐。
   private func reparentTrafficLights() {
     guard let contentView = self.contentView, !trafficLightButtons.isEmpty else {
       return
     }
     let bounds = contentView.bounds
-    // 工具栏条: 顶部留 14, 高 40 → 中心距窗口顶 34
-    let topMargin: CGFloat = 14
+    // 工具栏条: 顶部留 8, 高 40 → 中心距窗口顶 28
+    let topMargin: CGFloat = 8
     let toolbarHeight: CGFloat = 40
     let centerFromTop = topMargin + toolbarHeight / 2
-    // 与垂直间距一致: 左右间距 = 上下间距 14
-    let margin: CGFloat = 14
+    // 与垂直间距一致: 左右间距 = 上下间距 8
+    let margin: CGFloat = 8
     var currentX = margin
 
     for btn in trafficLightButtons {

@@ -319,8 +319,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   // 阅读主体内容
                   Padding(
                     padding: EdgeInsets.only(
-                      // 顶部: 工具栏上间距14 + 工具栏40 + 工具栏下间距14 = 68 (上下对称)
-                      top: 14 + 40 + 14,
+                      // 顶部: 工具栏上间距8 + 工具栏40 + 工具栏下间距8 = 56 (上下对称)
+                      top: 8 + 40 + 8,
                       bottom: 28,
                       left: settings.padding,
                       right: settings.padding,
@@ -349,11 +349,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       },
                     ),
                   ),
-                  // 顶部工具栏:放置在 macOS 标题栏区域,上下间距对称(上方留 14, 与下方一致)
+                  // 顶部工具栏:放置在 macOS 标题栏区域,上下间距对称(上方留 8, 与下方一致)
                   AnimatedPositioned(
                     duration: const Duration(milliseconds: 220),
                     curve: Curves.easeOutCubic,
-                    top: _topBarVisible ? 14 : -40,
+                    top: _topBarVisible ? 8 : -40,
                     left: 0,
                     right: 0,
                     child: _buildTopBar(colors),
@@ -493,14 +493,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   colors: colors,
                   onTap: _showSearchPanel,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 _buildIconButton(
                   icon: Icons.text_fields_rounded,
                   tooltip: '阅读设置',
                   colors: colors,
                   onTap: _showSettingsPanel,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 _buildIconButton(
                   icon: Icons.list_rounded,
                   tooltip: '目录',
