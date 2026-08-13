@@ -37,6 +37,23 @@ class MainFlutterWindow: NSWindow {
       object: self,
     )
 
+    // 注册窗口标题通道:Flutter 侧切换窗口标题(阅读时显示小说名,返回显示应用名)
+    let channel = FlutterMethodChannel(
+      name: "com.reader.novelReader/window",
+      binaryMessenger: flutterViewController.engine.binaryMessenger,
+    )
+    channel.setMethodCallHandler { [weak self] call, result in
+      switch call.method {
+      case "setTitle":
+        if let title = call.arguments as? String, !title.isEmpty {
+          self?.title = title
+        }
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     super.awakeFromNib()

@@ -20,6 +20,10 @@ class ReaderScreen extends StatefulWidget {
 }
 
 class _ReaderScreenState extends State<ReaderScreen> {
+  /// 与 macOS 原生通信,切换窗口标题。
+  static const _windowChannel =
+      MethodChannel('com.reader.novelReader/window');
+
   final _focusNode = FocusNode(debugLabel: 'reader');
   final _pagesCache = <int, List<String>>{};
 
@@ -40,6 +44,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
   @override
   void initState() {
     super.initState();
+    // 窗口标题显示小说名(内容页不再显示标题)
+    _windowChannel.invokeMethod('setTitle', widget.book.title);
     _init();
     ReaderSettings.current.addListener(_onSettingsChanged);
   }
@@ -72,6 +78,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _uiHideTimer?.cancel();
     _topBarHideTimer?.cancel();
     _flushProgress();
+    // 返回书架时恢复窗口标题
+    _windowChannel.invokeMethod('setTitle', '书架');
     ReaderSettings.current.removeListener(_onSettingsChanged);
     _focusNode.dispose();
     super.dispose();
@@ -149,14 +157,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
     await Future.delayed(const Duration(milliseconds: 30));
     if (!mounted) return;
     final chapter = widget.book.chapters[_chapterIndex];
-    // 分页高度须减去章节标题区域(标题最多2行 + 18间距),
-    // 否则每页文本按满高分页,渲染时被标题压缩导致末行文字截断/遮挡
-    final titleHeight = _titleReservedHeight(_pageSize.width);
-    final textMaxHeight = math.max(80.0, _pageSize.height - titleHeight);
+    // 页面不再显示章节标题,正文直接占满整个内容区
     final pages = TextPaginator.paginate(
       text: chapter.content,
       maxWidth: _pageSize.width,
-      maxHeight: textMaxHeight,
+      maxHeight: _pageSize.height,
       style: _textStyle(),
     );
     _pagesCache[_chapterIndex] = pages;
@@ -166,26 +171,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
       _ready = true;
       _pageIndex = _pageIndex.clamp(0, math.max(0, pages.length - 1));
     });
-  }
-
-  /// 测量章节标题占用的高度(最多 2 行 + 18px 间距),与 _PageContent 渲染一致。
-  double _titleReservedHeight(double maxWidth) {
-    final title = widget.book.chapters[_chapterIndex].title;
-    final painter = TextPainter(
-      text: TextSpan(
-        text: title,
-        style: const TextStyle(
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.4,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-      maxLines: 2,
-    )..layout(maxWidth: maxWidth);
-    final h = painter.height + 18;
-    painter.dispose();
-    return h;
   }
 
   /// 键位映射:
@@ -516,7 +501,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
     // 无动画直接替换内容,避免翻页/切章时的跳动
     return _PageContent(
       key: ValueKey('page_${_chapterIndex}_$_pageIndex'),
-      chapterTitle: widget.book.chapters[_chapterIndex].title,
       text: page,
       style: _textStyle(),
       colors: colors,
@@ -670,7 +654,6 @@ extension on Color {
 }
 
 class _PageContent extends StatelessWidget {
-  final String chapterTitle;
   final String text;
   final TextStyle style;
   final (Color, Color, Color, Color) colors;
@@ -678,7 +661,6 @@ class _PageContent extends StatelessWidget {
 
   const _PageContent({
     super.key,
-    required this.chapterTitle,
     required this.text,
     required this.style,
     required this.colors,
@@ -687,25 +669,8 @@ class _PageContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // 章节标题(唯一显示位置)
-        Text(
-          chapterTitle,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: colors.$4,
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.4,
-          ),
-        ),
-        const SizedBox(height: 18),
-        Expanded(child: _buildHighlightedText()),
-      ],
-    );
+    // 顶部不再显示章节标题(窗口标题已显示书名),正文占满整页
+    return _buildHighlightedText();
   }
 
   Widget _buildHighlightedText() {
