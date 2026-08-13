@@ -112,7 +112,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     if (_uiVisible && mounted) setState(() => _uiVisible = false);
   }
 
-  /// 显示顶部工具栏(仅当鼠标在顶部区域或工具栏自身上),并联动显示交通灯
+  /// 显示顶部工具栏(仅当鼠标在顶部区域),并联动显示交通灯
   void _showTopBar() {
     _topBarHideTimer?.cancel();
     if (!_topBarVisible && mounted) {
@@ -121,13 +121,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _windowChannel.invokeMethod('setTrafficLightsVisible', true);
   }
 
-  /// 延迟隐藏顶部工具栏(给移出工具栏 200ms 缓冲,避免抖动),并联动隐藏交通灯
-  void _scheduleHideTopBar() {
+  /// 立即隐藏顶部工具栏,并联动隐藏交通灯
+  void _hideTopBar() {
     _topBarHideTimer?.cancel();
-    _topBarHideTimer = Timer(const Duration(milliseconds: 200), () {
-      if (mounted) setState(() => _topBarVisible = false);
-      _windowChannel.invokeMethod('setTrafficLightsVisible', false);
-    });
+    if (_topBarVisible && mounted) setState(() => _topBarVisible = false);
+    _windowChannel.invokeMethod('setTrafficLightsVisible', false);
   }
 
   TextStyle _textStyle() => TextStyle(
@@ -305,13 +303,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
           child: Scaffold(
             backgroundColor: colors.$1,
             body: MouseRegion(
-              // 鼠标进入顶部区域(标题栏高度+缓冲)才显示顶部工具栏与交通灯
+              // 鼠标进入顶部区域(标题栏高度+缓冲)才显示顶部工具栏与交通灯;
+              // 离开顶部区域立即隐藏
               onHover: (event) {
                 if (event.position.dy < 100) {
                   _showTopBar();
                 } else if (_topBarVisible) {
-                  // 鼠标离开顶部区域,延迟隐藏
-                  _scheduleHideTopBar();
+                  _hideTopBar();
                 }
                 _showUi();
               },
@@ -358,11 +356,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     top: _topBarVisible ? 0 : -40,
                     left: 0,
                     right: 0,
-                    child: MouseRegion(
-                      onEnter: (_) => _showTopBar(),
-                      onExit: (_) => _scheduleHideTopBar(),
-                      child: _buildTopBar(colors),
-                    ),
+                    child: _buildTopBar(colors),
                   ),
                   // 底部极简页码:常驻显示(沉浸式)
                   AnimatedPositioned(
