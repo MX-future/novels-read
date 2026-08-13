@@ -1368,9 +1368,9 @@ class _SettingsDialogState extends State<_SettingsDialog> {
                 label: '边距',
                 valueLabel: _padding.toStringAsFixed(0),
                 value: _padding,
-                min: 40,
+                min: 20,
                 max: 160,
-                divisions: 12,
+                divisions: 14,
                 colors: widget.colors,
                 onChanged: (v) {
                   setState(() => _padding = v);

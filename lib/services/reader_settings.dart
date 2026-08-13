@@ -14,6 +14,10 @@ enum ReaderTheme {
 
   /// 夜间(深色)
   dark,
+
+  /// 暖白(比 sepia 浅、没那么黄,介于白与橙金之间)
+  /// 注意:新增枚举务必放在末尾,否则会破坏已存档的 index
+  warm,
 }
 
 extension ReaderThemeX on ReaderTheme {
@@ -44,6 +48,17 @@ extension ReaderThemeX on ReaderTheme {
           const Color(0xFF909AA6),
           const Color(0xFF8FB8E8),
         );
+      case ReaderTheme.warm:
+        return (
+          // 暖米白背景(没那么黄)
+          const Color(0xFFFBF5E9),
+          // 深灰棕文字
+          const Color(0xFF4B453C),
+          // 暖灰次要文字
+          const Color(0xFF8B8377),
+          // 暖金强调色
+          const Color(0xFFB08A4E),
+        );
     }
   }
 
@@ -55,6 +70,8 @@ extension ReaderThemeX on ReaderTheme {
         return '黄';
       case ReaderTheme.dark:
         return '夜';
+      case ReaderTheme.warm:
+        return '暖';
     }
   }
 }
@@ -86,7 +103,7 @@ class ReaderSettings {
   const ReaderSettings({
     this.fontSize = 17,
     this.lineHeight = 2.0,
-    this.padding = 44,
+    this.padding = 36,
     this.theme = ReaderTheme.white,
     this.arrowKeyMode = ArrowKeyMode.pagingVertical,
   });
@@ -118,7 +135,7 @@ class ReaderSettings {
     return ReaderSettings(
       fontSize: (json['fontSize'] as num?)?.toDouble() ?? 17,
       lineHeight: (json['lineHeight'] as num?)?.toDouble() ?? 2.0,
-      padding: (json['padding'] as num?)?.toDouble() ?? 44,
+      padding: (json['padding'] as num?)?.toDouble() ?? 36,
       theme: ReaderTheme.values[(json['theme'] as int?) ?? 0],
       arrowKeyMode: ArrowKeyMode.values[arrowIndex.clamp(0, ArrowKeyMode.values.length - 1)],
     );

@@ -12,7 +12,7 @@ void main() {
       const settings = ReaderSettings();
       expect(settings.fontSize, 17);
       expect(settings.lineHeight, 2.0);
-      expect(settings.padding, 44);
+      expect(settings.padding, 36);
       expect(settings.theme, ReaderTheme.white);
       expect(settings.arrowKeyMode, ArrowKeyMode.pagingVertical);
     });
@@ -22,7 +22,7 @@ void main() {
       final updated = settings.copyWith(fontSize: 20);
       expect(updated.fontSize, 20);
       expect(updated.lineHeight, 2.0); // 未改
-      expect(updated.padding, 44);
+      expect(updated.padding, 36);
       expect(updated.theme, ReaderTheme.white);
       expect(updated.arrowKeyMode, ArrowKeyMode.pagingVertical); // 未改
 
@@ -56,7 +56,7 @@ void main() {
       final settings = ReaderSettings.fromJson(const {});
       expect(settings.fontSize, 17);
       expect(settings.lineHeight, 2.0);
-      expect(settings.padding, 44);
+      expect(settings.padding, 36);
       expect(settings.theme, ReaderTheme.white);
       expect(settings.arrowKeyMode, ArrowKeyMode.pagingVertical);
     });
