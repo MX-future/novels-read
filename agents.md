@@ -1,0 +1,162 @@
+# agents.md — 项目交接指南
+
+> 本文件用于让任何 AI（或开发者）快速接手本项目。读完本文件即可理解项目结构、功能、关键实现与历史坑点，避免重复踩坑。
+
+## 1. 项目概述
+
+**Flutter macOS 小说阅读器（应用名：阅读 / 书架）**：本地书架 + EPUB 解析 + 分页阅读 + 进度/设置持久化。
+
+- 构建产物：`build/macos/Build/Products/Release/书架.app`
+- GitHub：`MX-future/novels-read`（public，SSH 认证已配置）
+- 纯桌面应用（macOS），无后端、无网络请求（除 pub 依赖拉取）
+
+## 2. 构建环境（本机关键，必读）
+
+⚠️ 这两点是本机最容易踩的坑，构建前必须了解：
+
+1. **Xcode 路径**：`xcode-select` 默认指向 `/Library/Developer/CommandLineTools`，直接 `flutter build macos` 会报 `xcrun: unable to find xcodebuild`。必须 `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`（Xcode 16.4 已装）。
+2. **pub.dev 网络**：默认代理下 502（`Proxy failed to establish tunnel`）。必须用国内镜像：`export PUB_HOSTED_URL=https://pub.flutter-io.cn FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`。
+
+### 构建命令
+
+```bash
+# Release 构建（推荐，脚本已自动处理上面两个坑）
+bash scripts/build_macos.sh
+
+# Debug 构建
+bash scripts/build_macos.sh --debug
+
+# 热重载运行
+bash scripts/run_macos.sh
+```
+
+`build_macos.sh` 还包含 **post-build 钩子**：用 `iconutil` 重新打包 icns（修复 Xcode 资产目录把 PNG 错标 RGBA 的 bug，见坑 #3）。构建后脚本会输出 `==> icns 已用 iconutil 重新打包`。
+
+## 3. 项目结构
+
+```
+lib/
+├── main.dart                    # 入口，启动时加载设置/进度
+├── models/book.dart             # Book / Chapter 模型（id, title, author, chapters, coverPath）
+├── screens/
+│   ├── library_screen.dart      # 书架页（547 行）：侧边栏 + 书库网格 + 空状态 + 打开书切换 ReaderScreen
+│   └── reader_screen.dart       # 阅读页（1560 行，核心）：沉浸式布局 + 分页 + 键盘 + 搜索/设置/目录对话框
+├── services/
+│   ├── epub_service.dart        # EPUB 解析（epubx）：章节内容 → 纯文本、封面、元数据
+│   ├── progress_store.dart      # 进度持久化（JSON 文件 + SharedPreferences key）
+│   └── reader_settings.dart     # 阅读设置（ValueNotifier 全局共享 + SharedPreferences 持久化）
+├── theme/app_theme.dart         # 书架页主题常量（AppTheme：background/sidebarBg/primary 等）
+├── utils/
+│   ├── html_text.dart           # HTML → 纯文本（保留段落结构）
+│   └── pagination.dart          # TextPaginator：TextPainter 按行分页
+└── widgets/
+    ├── book_grid_item.dart      # 书库网格卡片（封面 + 书名 + 进度条）
+    └── book_sidebar_tile.dart   # 侧边栏书籍条目（进度百分比）
+macos/
+└── Runner/
+    ├── MainFlutterWindow.swift  # 原生窗口：标题栏透明 + 全尺寸内容 + setTitle MethodChannel
+    ├── AppDelegate.swift
+    └── Info.plist               # CFBundleName=书架（PRODUCT_NAME）
+assets/
+└── icon/                        # 应用图标源（icon_warm_books.png 主用）+ README 截图
+scripts/
+├── build_macos.sh               # Release/Debug 构建 + icns 重打包
+└── run_macos.sh                 # flutter run
+test/                            # 60 个用例（pagination/settings/progress/html/models/widget）
+```
+
+## 4. 功能点
+
+### 书架页（library_screen.dart）
+- 左侧侧边栏：书籍列表（含阅读进度 %），支持折叠；导入 EPUB 按钮（file_picker）
+- 右侧书库网格：封面 + 书名 + 阅读进度条（动态列数，`max(3, width/180)`）
+- 键盘：`←/→` 翻页（书架网格）、`↑/↓` 切换章节、空格翻页
+- 顶部留出 macOS 交通灯区域（40px），见坑 #12
+
+### 阅读页（reader_screen.dart）—— 核心
+- **沉浸式布局**：macOS 标题栏透明（`titlebarAppearsTransparent + fullSizeContentView + titleVisibility.hidden`），Flutter 内容延伸至标题栏；顶部工具栏（返回/书名/搜索/设置/目录）**仅鼠标移到顶部 100px 区域时显示**，移开立即隐藏
+- **章节标题**：每页顶部居中加粗（18px），分页时预留标题高度
+- **正文分页**：TextPaginator 按行分页，正文填满整页
+- **翻页按钮**：左右常驻半透明（alpha 0.35），hover 变明显
+- **底部极简页码**：左 `X / Y 页`、右 `本章还剩 N 页`，常驻透明显示
+- **4 种背景主题**：白 / 黄(sepia 橙金) / 夜 / 暖(暖白)，设置页切换，持久化
+- **设置对话框**：字号(14-24)/行距(1.4-2.4)/边距(20-160)滑块 + 主题选择 + 方向键模式
+- **方向键模式**（ArrowKeyMode）：`上下翻页·左右切章` 或 `上下切章·左右翻页`；空格/PageUp/PageDown 始终翻页，Esc 返回书架
+- **搜索**：章节内关键字搜索 → 跳转到对应页，高亮 8 秒
+- **目录**：打开时自动滚动定位到当前章节（居中显示）
+- **窗口标题**：打开书 → MethodChannel 设置窗口标题为书名；返回书架 → 恢复"书架"
+- **进度保存**：章节 + 页码，防抖写入，切章/退出时 flush
+
+## 5. 关键技术实现
+
+### 分页（utils/pagination.dart）
+`TextPaginator.paginate(text, maxWidth, maxHeight, style)`：
+- TextPainter 布局全文 → `computeLineMetrics()` 获取每行（ascent/descent/baseline）
+- 按行分组：每页从 `lineTopY` 开始，**行尾（lineTopY + line.height）<= 页底**的行归入本页
+- 用 `getLineBoundary` 截取字符范围，支持空行/连续换行
+
+### 设置全局共享（services/reader_settings.dart）
+- `ReaderSettings.current` 是 `ValueNotifier`，全局监听
+- `ReaderSettings.save()` 更新 notifier + 写 SharedPreferences；阅读页 `ValueListenableBuilder` 响应
+- **枚举 index 持久化**：`theme`/`arrowKeyMode` 存 index，新增枚举值**必须放末尾**（见坑 #11）
+
+### 原生通信（MethodChannel）
+- channel 名：`com.reader.novelReader/window`
+- `setTitle(String)`：切换窗口标题（macOS 侧 `self.title = title`）
+- macOS 侧在 `MainFlutterWindow.awakeFromNib` 注册 handler
+
+### 键盘控制
+- `Focus(onKeyEvent: _handleKeyEvent)` 全局捕获
+- 方向键按 `arrowKeyMode` 分发；Space/PageUp/PageDown 固定翻页；Esc 返回
+
+## 6. 踩过的坑（重要！）
+
+### 构建/环境
+1. **xcode-select 指向 CommandLineTools** → `xcrun: unable to find xcodebuild`。必须 `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`。
+2. **pub.dev 502** → 必须用国内镜像 `PUB_HOSTED_URL/FLUTTER_STORAGE_BASE_URL`。
+
+### 图标（macOS）
+3. **Xcode 资产目录把 PNG 错标 RGBA** → 生成的 `AppIcon.icns` 被识别为 256×256 + hasAlpha=yes，Dock/Launchpad 渲染异常。修复：`iconutil` 从 PNG iconset 重打包为 1024×1024 无 alpha 的 icns（已固化进 build_macos.sh）。
+4. **"PNG" 实为 WebP**：在线图标生成器导出的 `*-mac.png` 签名是 `RIFF...WEBP`。PIL 能读但 **Xcode/iconutil 不认** → icns 错误压缩成 256×256、alpha 丢失、图标变直角。检测：`file xxx.png` 看签名；修复：PIL `Image.open().save('PNG')` 转真 PNG。AppIcon.appiconset 必须放真正的 RGBA PNG。
+5. **多 .app 副本图标坑**：`flutter run`(Debug) 和 `flutter build macos`(Release) 生成两份同 bundle ID 的 .app。**macOS 按 bundle ID 注册 Launch Services**，Dock 图标可能来自任意一个版本（通常是旧的 Debug）。改图标后必须：同步 Release 的 `AppIcon.icns`+`Assets.car` 到 Debug → `lsregister -f` 重新注册 → 删缓存重启 Dock。
+
+### 阅读分页
+6. **分页文字截断/遮挡**（重要）：
+   - 根因 A：分页用整个内容区高度，但页面渲染时文本上方还有章节标题（最多2行）+间距 → 文本实际可用高度更小，末行被截断。修复：分页前用 TextPainter 测量标题高度，`maxHeight = 总高 - 标题高 - 间距`。
+   - 根因 B：页尾判断用"行首 < 页底"，某行行首在页内但行尾超出也会被包含 → 行尾截断。修复：改为"行尾(行首+行高) <= 页底"。
+
+### macOS 原生（窗口/坐标系）
+7. **NSView 坐标系默认原点在左下角**（`isFlipped = false`）！设置视图 y 坐标时如果按"距顶"理解，会把内容放到窗口**底部**。必须判断 `isFlipped`：flipped 用距顶距离，否则用 `高度 - 距顶 - 自身高/2`。⚠️ 这是阅读页顶部布局和交通灯反复出问题的根源。
+8. **全屏时 `contentView.bounds` 滞后**：全屏切换瞬间 bounds 还是旧值，依赖它计算 y 会导致按钮瞬间跑到底部再回来。改用 `window.frame.height`（窗口 frame 更新及时）。
+9. **全屏时 macOS 会强制重置交通灯按钮位置**（日志证实被系统移到左下角），自定义交通灯位置/显隐在**全屏场景无法稳定对抗系统行为**。结论：**放弃自定义交通灯，回归 macOS 默认**（系统管理位置与显隐）。
+10. **沙箱限制日志写入**：Release 版启用了 app-sandbox（`com.apple.security.app-sandbox=true`），`/tmp` 和真实 `~/Library/Logs` 不可写！`NSHomeDirectory()` 返回**容器路径**（`~/Library/Containers/com.reader.novelReader/Data/`）。调试日志要写到容器内路径才能读到。
+
+### 设置持久化
+11. **枚举加值破坏存档**：`theme` 存的是 `enum.index`，在**中间插入**新枚举值会让旧存档的 index 指向错误主题。新增枚举值**必须放在末尾**（`ReaderTheme.warm` 就是加在 dark 之后）。
+
+## 7. 测试
+
+```bash
+flutter test   # 60 个用例，全部通过
+```
+
+覆盖：pagination（分页行高/拼接还原/空行）、reader_settings（默认值/copyWith/序列化/save-load/非法索引 clamp）、progress_store（JSON 结构/损坏容错）、html_text（段落提取）、models、widget 冒烟。
+
+## 8. 常见任务指引
+
+| 任务 | 位置 |
+|---|---|
+| 改书架网格列数/卡片样式 | `lib/widgets/book_grid_item.dart` + `library_screen.dart` 的 GridView |
+| 调整阅读分页（行距/字号生效） | `reader_settings.dart` 默认值 + `reader_screen.dart` 的 `_textStyle()` |
+| 新增背景主题 | `reader_settings.dart` 的 `ReaderTheme`（**放末尾**）+ colors/label |
+| 调整顶部工具栏显示逻辑 | `reader_screen.dart` 的 `_showTopBar/_hideTopBar` + onHover 区域（dy<100） |
+| 改窗口最小尺寸/标题栏 | `MainFlutterWindow.swift`（contentMinSize / titlebar 配置） |
+| 改应用图标 | `assets/icon/` 源图 → `.workbuddy/scripts/apply_app_icon.py`（SCALE 调主体大小） |
+| 新增键盘快捷键 | `reader_screen.dart` 的 `_handleKeyEvent` |
+
+## 9. 注意事项
+
+- 应用名显示为"书架"（PRODUCT_NAME），但 README/宣传叫"阅读"，勿混用
+- 书架页打开书后由 `_buildMainArea()` 直接切换为 `ReaderScreen`（非路由跳转），返回用 `onBack` 回调
+- 阅读页 `_pagesCache` 按章节缓存分页结果，字号/边距等设置变化时清缓存重新分页
+- git 用户：zhiqiang.shen / zhiqiang.shen@nufront.com；远程：`git@github.com:MX-future/novels-read.git`
