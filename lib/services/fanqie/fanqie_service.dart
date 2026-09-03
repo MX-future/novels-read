@@ -19,6 +19,14 @@ class FanqieService {
   FanqieService._();
 
   static const String host = 'https://fanqienovel.com';
+
+  /// 社区中转源(实验性,默认关闭):针对"网页需 VIP、但 App 端游客可免费读"的书。
+  /// 这类书官方 web 匿名只给约 200 字试读、无 Cookie/VIP 通道可下全文,而此
+  /// 中转源实测可匿名返回全文(2026-09-03 验证:web 锁章全文约 2150 字命中)。
+  /// ⚠️ 第三方个人服务器:内容经过非官方服务,可能随时失效/限流,请用户自行
+  /// 权衡;因此默认关闭,仅在用户显式开启后作为兜底(不替代 Cookie/VIP 通道)。
+  static const String relayHost = 'http://101.35.133.34:5000';
+
   static const String _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -185,11 +193,14 @@ class FanqieService {
   ///
   /// [cookie] 为可选登录态(浏览器登录番茄后复制)。匿名时 VIP/付费章服务端
   /// 只返回约 200 字符试读;带有效登录 Cookie 且账号具备阅读权限时才返回全文。
+  /// [useRelay] 为可选备用中转源(默认关闭):当官方通道只给试读/空时,向第三方
+  /// 中转源再取一次正文。部分"网页需 VIP、App 游客可读"的书依赖此源才能下全。
   /// 返回 null 表示该章无正文;返回结果的 [FanqieChapterFetch.preview] 为 true
   /// 表示只拿到试读片段(权限不足),不应入库。
   static Future<FanqieChapterFetch?> fetchChapterContent(
     String itemId, {
     String? cookie,
+    bool useRelay = false,
   }) async {
     final ck = normalizeCookie(cookie);
     // 1) 阅读页 SSR(匿名/登录均可请求)
@@ -225,6 +236,22 @@ class FanqieService {
       }
     }
 
+    // 3) 仍是试读/空、且显式开启备用中转源时,再问一次第三方中转。
+    //    部分"网页需 VIP、App 游客可读"的书,只有此源能匿名取到全文。
+    if ((preview || text == null) && useRelay) {
+      try {
+        final relayText = await _fetchRelay(itemId);
+        if (relayText != null &&
+            relayText.length > (text?.length ?? 0) &&
+            !isPreviewText(relayText, wordNumber, lockedMark)) {
+          text = relayText;
+          preview = false;
+        }
+      } catch (_) {
+        // 备用源失败不阻断:保留既有结果(可能是试读,由上层决定跳过)
+      }
+    }
+
     if (text == null || text.trim().isEmpty) return null;
     return FanqieChapterFetch(text: text, preview: preview);
   }
@@ -248,6 +275,30 @@ class FanqieService {
       final content = cd?['content']?.toString() ?? '';
       if (content.trim().isEmpty) return null;
       return (content, _asInt(cd?['chapterWordNumber']));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 第三方中转源取文:返回已清洗为纯文本的正文,失败/异常返回 null。
+  ///
+  /// 中转返回 JSON `{code, data:{content}}`,content 为明文 XHTML
+  /// (含 `<p>` 段落),复用 [FanqieMap.decodeChapterHtml] 剥标签清洗,
+  /// 输出格式与官方 SSR 通道一致。注意该源非官方、仅 HTTP,作为可选兜底。
+  static Future<String?> _fetchRelay(String itemId) async {
+    final resp = await http
+        .get(Uri.parse('$relayHost/api/raw_full?item_id=$itemId'))
+        .timeout(_timeout);
+    if (resp.statusCode != 200) return null;
+    final body = _body(resp).trim();
+    if (body.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(body);
+      final data = decoded is Map<String, dynamic> ? decoded['data'] : null;
+      final content =
+          data is Map<String, dynamic> ? data['content']?.toString() ?? '' : '';
+      if (content.trim().isEmpty) return null;
+      return _decodeOrNull(content);
     } catch (_) {
       return null;
     }
@@ -353,6 +404,8 @@ class FanqieService {
   ///
   /// [cookie] 为可选登录态。无 Cookie 时 VIP/付费章自动跳过;带 Cookie 时会
   /// 尝试抓取 VIP 章,仅当服务端返回全文(非试读)才入库,否则按无权限跳过。
+  /// [useRelay] 为可选备用中转源(默认关闭):开启后,锁章不再因无 Cookie 直接
+  /// 跳过,而是先走官方通道、拿不到全文时再尝试第三方中转(见 [fetchChapterContent])。
   static Future<FanqieDownloadStats> downloadBook({
     required String bookId,
     required FanqieBookMeta meta,
@@ -360,6 +413,7 @@ class FanqieService {
     int? startOrder,
     int? endOrder,
     String? cookie,
+    bool useRelay = false,
     void Function(FanqieDownloadStats)? onProgress,
     Future<bool> Function()? isCancelled,
   }) async {
@@ -429,8 +483,9 @@ class FanqieService {
         already += 1;
         continue;
       }
-      // 锁定章:无 Cookie 一律跳过;有 Cookie 才进入下方抓取尝试
-      if (ch.locked && ck == null) {
+      // 锁定章:无 Cookie 且未开备用源时一律跳过;开了备用源则交给下方
+      // fetchChapterContent 按「官方→中转」顺序尝试取全文
+      if (ch.locked && ck == null && !useRelay) {
         lockedSkip += 1;
         continue;
       }
@@ -442,7 +497,8 @@ class FanqieService {
       FanqieChapterFetch? result;
       for (var attempt = 0; attempt <= _maxRetry; attempt++) {
         try {
-          result = await fetchChapterContent(ch.itemId, cookie: ck);
+          result = await fetchChapterContent(ch.itemId,
+              cookie: ck, useRelay: useRelay);
           break;
         } catch (_) {
           if (attempt == _maxRetry) {

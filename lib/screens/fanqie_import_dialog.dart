@@ -53,6 +53,7 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
   bool _downloading = false; // 正在下载
   bool _cancelRequested = false;
   bool _cookieExpanded = false; // Cookie 输入区展开
+  bool _relayEnabled = false; // 备用中转源开关(默认关,实验性)
   String? _error;
   String? _fieldError; // 范围输入校验错误
   FanqieBookMeta? _meta;
@@ -139,6 +140,7 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
         cookie: _cookieCtl.text.trim().isEmpty
             ? null
             : _cookieCtl.text.trim(),
+        useRelay: _relayEnabled,
         onProgress: (v) {
           if (mounted) setState(() => _stats = v);
         },
@@ -370,14 +372,16 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
           ),
           const SizedBox(height: 6),
           Text(
-            meta.lockedCount > 0 && !_cookieExpanded
-                ? '留空表示从第 1 章到最后一章;付费/VIP 章节默认跳过,可展开下方"登录 Cookie"后下载'
+            meta.lockedCount > 0 && !_cookieExpanded && !_relayEnabled
+                ? '留空表示从第 1 章到最后一章;付费/VIP 章节默认跳过,可展开下方"登录 Cookie"或开启"备用源"后下载'
                 : '留空表示从第 1 章到最后一章',
             style: const TextStyle(color: AppTheme.textTertiary, fontSize: 11),
           ),
           if (meta.lockedCount > 0) ...[
             const SizedBox(height: 10),
             _buildCookieSection(),
+            const SizedBox(height: 6),
+            _buildRelayToggle(),
           ],
           if (_fieldError != null) ...[
             const SizedBox(height: 8),
@@ -415,10 +419,10 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
             ],
           ),
           // 预览:书架无此书时提示将新加入
-          if (free == 0 && !_cookieExpanded)
+          if (free == 0 && !_cookieExpanded && !_relayEnabled)
             const Padding(
               padding: EdgeInsets.only(top: 2),
-              child: Text('该范围全部为付费章节,填写上方"登录 Cookie"后才能下载',
+              child: Text('该范围全部为付费章节,填写"登录 Cookie"或开启"备用源"后才能下载',
                   style: TextStyle(color: Color(0xFFD64545), fontSize: 12)),
             ),
         ],
@@ -496,13 +500,102 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
           const Text(
             '说明:在浏览器登录番茄小说后按 F12,切到 Network 标签,点任意请求,'
             '复制 Cookie 请求头的值粘贴到上方。Cookie 仅在本次下载时携带、'
-            '不保存到书架;账号无该章阅读权限时仍会跳过——VIP 正文只能靠账号'
-            '权限获取,不存在匿名通道。',
+            '不保存到书架;账号无该章阅读权限时仍会跳过——网页端 VIP 正文只能'
+            '靠账号权限获取。若该书在手机 App 上游客即可免费读(网页却要 VIP),'
+            '请改用下方"备用源"。',
             style: TextStyle(
                 color: AppTheme.textTertiary, fontSize: 11, height: 1.5),
           ),
         ],
       ],
+    );
+  }
+
+  /// 备用中转源开关(实验性,默认关):部分书"网页需 VIP、App 游客可免费读",
+  /// 官方 web 无 Cookie/VIP 通道取不到全文;开启后锁章将尝试从社区中转源取文。
+  Widget _buildRelayToggle() {
+    final on = _relayEnabled;
+    return InkWell(
+      onTap: _downloading
+          ? null
+          : () => setState(() => _relayEnabled = !_relayEnabled),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: on ? const Color(0xFFEAF2FC) : const Color(0xFFF5F8FC),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: on ? AppTheme.primary : AppTheme.divider,
+            width: on ? 1.2 : 1,
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.route_outlined,
+                size: 15,
+                color: on ? AppTheme.primary : const Color(0xFF9AA7B8)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    on ? '备用源已开启' : '备用源(实验性)',
+                    style: TextStyle(
+                      color: on ? AppTheme.primary : AppTheme.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    on
+                        ? '锁章将先走官方通道,拿不到全文再从社区中转取文。'
+                            '正文经第三方服务器中转,非官方通道、可能随时失效。'
+                        : '适用于:手机 App 游客即可免费读、网页却要 VIP 的书。',
+                    style: const TextStyle(
+                        color: AppTheme.textTertiary,
+                        fontSize: 11,
+                        height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: _buildTogglePill(on),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTogglePill(bool on) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      width: 34,
+      height: 20,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: on ? AppTheme.primary : const Color(0xFFC9D4E0),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: AnimatedAlign(
+        duration: const Duration(milliseconds: 160),
+        alignment: on ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          width: 16,
+          height: 16,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+          ),
+        ),
+      ),
     );
   }
 

@@ -166,6 +166,8 @@ test/                            # 101 个用例（pagination/settings/progress/
 16. **`originalAuthors` 是数组**：`[{AuthorId,AuthorName}]`，不是字符串；取作者优先 `authorName`，缺失时遍历该数组。
 17. **正文 PUA 解码依赖静态表**：若发现整本正文解出来是乱码/方块，先怀疑番茄更换字体 → 需重新生成 `fanqie_map.dart`（抓 reader SSR 内嵌字体或用 tianhuoDD 字典比对）。
 18. **VIP 下载必须带登录 Cookie，且是"权限换全文"不是破解**：匿名/无效 Cookie 下服务端只给约 200 字试读，`/api/reader/full` 匿名恒 200 空 body。参考仓库（POf-L/Fanqie-novel-Downloader）能下 VIP 是因其内置浏览器登录番茄账号（可到 SVIP）后自动同步 Cookie。本 App 落地方案：导入对话框展开"登录 Cookie(可选)"粘贴浏览器 Cookie（F12 → Network → 任意请求 → Cookie 请求头），请求自动带 `Cookie` 头；账号无该章权限时仍跳过。Cookie 仅内存传递、不落盘、不入书架。
+19. **存在"网页需 VIP、但手机 App 游客可免费读"的书（分端权限）**：实测《修仙之吞天诀》(7393543333957618713) 783 章中 773 章 web `isChapterLock`，web 匿名只回 ~200 字试读；但手机 App **游客态**可全本读。这不是解析 bug，是番茄按端下发权限：正文权限由 App 通道（com.dragon.read，`api5-normal-sinfonlinec.fqnovel.com/reading/reader/full/v1/`）决定，而该通道每请求要 X-Gorgon/X-Argus/X-Ladon/X-Helios/X-Medusa 签名（libmetasec_ml.so 生成），**无公开可运行实现**（fanqie-dl 缺 `lib/so_code.bin` 运行段且 Helios/Medusa 未完成）。遇到"web 全锁但 App 能读"的书：web Cookie 通道无效（该书 web 侧要 VIP 账号）。
+20. **"仅 App 免费"书的可行解：社区中转源（可选兜底）**：`http://101.35.133.34:5000/api/raw_full?item_id=`（ying-ck/fanqienovel-downloader 所用，2026-09-03 实测匿名返回全文，锁章 2150 字命中，纯 HTTP、~1s）。已接入：`FanqieService` 加 `relayHost` 常量 + `fetchChapterContent(useRelay:)`/`downloadBook(useRelay:)`，对话框"备用源(实验性)"开关（默认关）。注意：**第三方非官方服务器**（内容过境第三方、仅 HTTP、可能失效/限流），且疑似即 App 通道的聚合；不要做成默认/唯一通道，Cookie 仍是 web-VIP 书首选。若中转失效，服务端风控升级或作者关停是主因，勿花时间修本端。
 
 ## 7. 测试
 
