@@ -4,11 +4,11 @@
 
 ## 1. 项目概述
 
-**Flutter macOS 小说阅读器（应用名：阅读 / 书架）**：本地书架 + EPUB 解析 + 分页阅读 + 进度/设置持久化。
+**Flutter macOS 小说阅读器（应用名：阅读 / 书架）**：本地书架 + EPUB 解析 + 在线番茄小说导入下载 + 分页阅读 + 进度/设置持久化。
 
 - 构建产物：`build/macos/Build/Products/Release/书架.app`
 - GitHub：`MX-future/novels-read`（public，SSH 认证已配置）
-- 纯桌面应用（macOS），无后端、无网络请求（除 pub 依赖拉取）
+- 纯桌面应用（macOS），无后端；仅"在线导入番茄小说"功能会发起出网请求（沙箱已加 `network.client`）
 
 ## 2. 构建环境（本机关键，必读）
 
@@ -39,10 +39,14 @@ lib/
 ├── main.dart                    # 入口，启动时加载设置/进度
 ├── models/book.dart             # Book / Chapter 模型（id, title, author, chapters, coverPath）
 ├── screens/
-│   ├── library_screen.dart      # 书架页（547 行）：侧边栏 + 书库网格 + 空状态 + 打开书切换 ReaderScreen
+│   ├── library_screen.dart      # 书架页：侧边栏 + 书库网格 + 空状态 + 打开书切换 ReaderScreen
+│   ├── fanqie_import_dialog.dart# 番茄在线导入对话框（链接/ID → 确认书籍与范围 → 进度下载）
 │   └── reader_screen.dart       # 阅读页（1560 行，核心）：沉浸式布局 + 分页 + 键盘 + 搜索/设置/目录对话框
 ├── services/
-│   ├── epub_service.dart        # EPUB 解析（epubx）：章节内容 → 纯文本、封面、元数据
+│   ├── epub_service.dart        # EPUB 解析（epubx）：章节内容 → 纯文本、封面、元数据；另暴露 saveBook/saveCover 供番茄入库
+│   ├── fanqie/
+│   │   ├── fanqie_service.dart  # 番茄直连服务：目录/书页/正文抓取 + PUA 解码 + 范围下载(续传/跳过VIP/落盘)
+│   │   └── fanqie_map.dart      # 362 项 PUA 码位→汉字 静态解码表 + decodeText/decodeChapterHtml
 │   ├── progress_store.dart      # 进度持久化（JSON 文件 + SharedPreferences key）
 │   └── reader_settings.dart     # 阅读设置（ValueNotifier 全局共享 + SharedPreferences 持久化）
 ├── theme/app_theme.dart         # 书架页主题常量（AppTheme：background/sidebarBg/primary 等）
@@ -62,16 +66,22 @@ assets/
 scripts/
 ├── build_macos.sh               # Release/Debug 构建 + icns 重打包
 └── run_macos.sh                 # flutter run
-test/                            # 60 个用例（pagination/settings/progress/html/models/widget）
+test/                            # 91 个用例（pagination/settings/progress/html/models/widget/fanqie）
 ```
 
 ## 4. 功能点
 
 ### 书架页（library_screen.dart）
-- 左侧侧边栏：书籍列表（含阅读进度 %），支持折叠；导入 EPUB 按钮（file_picker）
+- 左侧侧边栏：书籍列表（含阅读进度 %），支持折叠；导入 EPUB 按钮（file_picker）+ 在线导入(番茄)次级按钮
 - 右侧书库网格：封面 + 书名 + 阅读进度条（动态列数，`max(3, width/180)`）
 - 键盘：`←/→` 翻页（书架网格）、`↑/↓` 切换章节、空格翻页
-- 顶部留出 macOS 交通灯区域（40px），见坑 #12
+- 顶部留出 macOS 交通灯区域（40px）
+
+### 在线导入番茄小说（services/fanqie/ + screens/fanqie_import_dialog.dart）
+- 入口：侧边栏"在线导入(番茄)"按钮 / 空书架中央次级按钮；无关键词搜索（官方搜索被风控，见坑 #14）
+- 流程：粘贴书籍链接或纯 ID → `fetchBookMeta`（目录 + 书页元信息）→ 展示封面/书名/作者/字数/章数/VIP 章数 → 选起始~结束章（留空=全本）→ `downloadBook` 下载入架
+- 书籍落盘复用 `EpubService.saveBook/saveCover`，Book.id 带 `fanqie_` 前缀、`sourcePath='fanqie://{bookId}'`，自动出现在书架
+- 容错：付费/VIP 章自动跳过；单章失败重试 2 次后计入 failed；每下载 10 章落盘一次，取消/中断后已下载部分保留，再次导入同名书自动续传
 
 ### 阅读页（reader_screen.dart）—— 核心
 - **沉浸式布局**：macOS 标题栏透明（`titlebarAppearsTransparent + fullSizeContentView + titleVisibility.hidden`），Flutter 内容延伸至标题栏；顶部工具栏（返回/书名/搜索/设置/目录）**仅鼠标移到顶部 100px 区域时显示**，移开立即隐藏
@@ -105,6 +115,17 @@ test/                            # 60 个用例（pagination/settings/progress/h
 - `setTitle(String)`：切换窗口标题（macOS 侧 `self.title = title`）
 - macOS 侧在 `MainFlutterWindow.awakeFromNib` 注册 handler
 
+### 番茄正文解码（services/fanqie/fanqie_map.dart）
+- 番茄网页版正文做**字体混淆**：约 1/3 字符是 PUA 私用区码位（U+E000–U+F8FF），浏览器靠 @font-face 的字形表显示
+- **关键发现**：PUA 码位十进制 == 该字在番茄全局字体里的字形编号，且映射站点级稳定（同一书两章共用字体，362/362 完全一致）
+- 因此解码 = 纯静态查表：`FanqieMap.puaToChar[codePoint]`（362 项，源自 tianhuoDD/fanqie-novel-decryptor 的 font_map.py），**无需下载/解析 woff**。`decodeText` 替换字符、`decodeChapterHtml` 先解码再走 `HtmlText.convert` 去标签成段落
+- ⚠️ 番茄若更换/分片字体，表会失效——届时需重新抓字体重生成表
+
+### 番茄网络层（services/fanqie/fanqie_service.dart）
+- 匿名可用的三个端点（实测 2026-09-03）：目录 `GET /api/reader/directory/detail?bookId=`、书页 `GET /page/{bookId}`（SSR）、正文 `GET /reader/{itemId}`（SSR 内嵌 `chapterData.content`）
+- 解析：HTML 里嵌的 JSON 用自研平衡括号扫描器 `readJsonObject/extractObjectWithKey` 抽取（按 `"key"` 找下一个 `{`，字符串内 `{}`/转义不误判），避免引入重型解析
+- 章节抓取限速 350ms、单章 20s 超时、失败重试 2 次，避免触发限流
+
 ### 键盘控制
 - `Focus(onKeyEvent: _handleKeyEvent)` 全局捕获
 - 方向键按 `arrowKeyMode` 分发；Space/PageUp/PageDown 固定翻页；Esc 返回
@@ -134,13 +155,21 @@ test/                            # 60 个用例（pagination/settings/progress/h
 ### 设置持久化
 11. **枚举加值破坏存档**：`theme` 存的是 `enum.index`，在**中间插入**新枚举值会让旧存档的 index 指向错误主题。新增枚举值**必须放在末尾**（`ReaderTheme.warm` 就是加在 dark 之后）。
 
+### 番茄在线导入
+12. **出网需沙箱权限**：macOS app-sandbox 默认禁止联网，导入番茄报网络错误先查 `macos/Runner/{DebugProfile,Release}.entitlements` 是否含 `com.apple.security.network.client`（Debug 版还要看 DebugProfile 那份）。
+13. **目录 JSON 是两层嵌套**：目录接口返回 `{code,message,data:{allItemIds,volumeNameList,chapterListWithVolume}}`，章节在 `data.chapterListWithVolume`（数组的数组：每卷=章对象数组）。**不要把顶层直接当目录解析**。章对象字段：`itemId/title/needPay/isChapterLock/isPaidStory/isPaidPublication/volume_name/realChapterOrder`。
+14. **关键词搜索不可用（无后端）**：网页搜索接口 `search_book/v1` 匿名请求被字节安全 SDK（secsdk/captcha）风控，返回 HTTP 200 空 body；因此只能"链接/ID 导入"，不支持搜索。若将来要搜索，需走后端 + 风控（如云函数带 cookie）。
+15. **封面 URL 常无 scheme**：书页 SSR 的 `thumbUri` 可能是 `//p6-...`，`Uri.parse` 会失败；入库前用 `_normalizeUrl` 补 `https:`。
+16. **`originalAuthors` 是数组**：`[{AuthorId,AuthorName}]`，不是字符串；取作者优先 `authorName`，缺失时遍历该数组。
+17. **正文 PUA 解码依赖静态表**：若发现整本正文解出来是乱码/方块，先怀疑番茄更换字体 → 需重新生成 `fanqie_map.dart`（抓 reader SSR 内嵌字体或用 tianhuoDD 字典比对）。
+
 ## 7. 测试
 
 ```bash
-flutter test   # 60 个用例，全部通过
+flutter test   # 91 个用例，全部通过
 ```
 
-覆盖：pagination（分页行高/拼接还原/空行）、reader_settings（默认值/copyWith/序列化/save-load/非法索引 clamp）、progress_store（JSON 结构/损坏容错）、html_text（段落提取）、models、widget 冒烟。
+覆盖：pagination（分页行高/拼接还原/空行）、reader_settings（默认值/copyWith/序列化/save-load/非法索引 clamp）、progress_store（JSON 结构/损坏容错）、html_text（段落提取）、fanqie_map（表完整性/解码/去标签）、fanqie_service（parseBookId/parseChapters 卷拼接与 VIP 标记/extractObjectWithKey 与 readJsonObject 的引号-转义-花括号扫描）、models、widget 冒烟。
 
 ## 8. 常见任务指引
 
@@ -153,10 +182,14 @@ flutter test   # 60 个用例，全部通过
 | 改窗口最小尺寸/标题栏 | `MainFlutterWindow.swift`（contentMinSize / titlebar 配置） |
 | 改应用图标 | `assets/icon/` 源图 → `.workbuddy/scripts/apply_app_icon.py`（SCALE 调主体大小） |
 | 新增键盘快捷键 | `reader_screen.dart` 的 `_handleKeyEvent` |
+| 加出网请求/改番茄端点 | `lib/services/fanqie/fanqie_service.dart`（host/端点/UA/限速都在顶部） |
+| 番茄正文解不开（乱码） | 重新生成 `lib/services/fanqie/fanqie_map.dart`（字体表更新，见坑 #17） |
+| 改在线导入对话框样式/流程 | `lib/screens/fanqie_import_dialog.dart` |
 
 ## 9. 注意事项
 
 - 应用名显示为"书架"（PRODUCT_NAME），但 README/宣传叫"阅读"，勿混用
 - 书架页打开书后由 `_buildMainArea()` 直接切换为 `ReaderScreen`（非路由跳转），返回用 `onBack` 回调
 - 阅读页 `_pagesCache` 按章节缓存分页结果，字号/边距等设置变化时清缓存重新分页
+- 书籍数据目录：`~/Library/Containers/com.reader.novelReader/Data/Library/Application Support/novel_reader_books/`（沙箱容器内），每书一个 `{id}.json` + 封面；番茄书 id 形如 `fanqie_7663...`
 - git 用户：zhiqiang.shen / zhiqiang.shen@nufront.com；远程：`git@github.com:MX-future/novels-read.git`
