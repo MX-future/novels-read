@@ -9,6 +9,7 @@ import '../services/progress_store.dart';
 import '../theme/app_theme.dart';
 import '../widgets/book_grid_item.dart';
 import '../widgets/book_sidebar_tile.dart';
+import 'fanqie_import_dialog.dart';
 import 'reader_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
@@ -71,6 +72,33 @@ class _LibraryScreenState extends State<LibraryScreen> {
     } finally {
       if (mounted) setState(() => _importing = false);
     }
+  }
+
+  /// 在线导入番茄小说:粘贴链接/ID → 选范围 → 下载并入架。
+  Future<void> _importFanqie() async {
+    final result = await showFanqieImportDialog(context);
+    if (result == null || !mounted) return;
+    await _refresh();
+
+    String msg;
+    if (result.cancelled) {
+      final kept = result.fetched + result.already;
+      msg = kept > 0
+          ? '已取消:《${result.title}》保留已下载 $kept 章,可再次导入续传'
+          : '已取消下载';
+    } else if (result.fetched + result.already == 0) {
+      msg = '《${result.title}》没有可下载的免费章节'
+          '${result.lockedSkip > 0 ? '(VIP ${result.lockedSkip} 章已跳过)' : ''}';
+    } else {
+      final parts = <String>[
+        '《${result.title}》导入完成:新增 ${result.fetched} 章'
+      ];
+      if (result.already > 0) parts.add('已有 ${result.already} 章');
+      if (result.lockedSkip > 0) parts.add('跳过 VIP ${result.lockedSkip} 章');
+      if (result.failed > 0) parts.add('失败 ${result.failed} 章');
+      msg = parts.join(' · ');
+    }
+    _showToast(msg);
   }
 
   Future<void> _openBook(BookMeta meta) async {
@@ -222,6 +250,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
             Center(child: _buildCollapseToggle()),
             const SizedBox(height: 16),
             _buildImportButton(),
+            const SizedBox(height: 10),
+            _buildFanqieImportButton(),
           ],
         ),
       );
@@ -255,6 +285,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
           const SizedBox(height: 16),
           _buildImportButton(),
+          const SizedBox(height: 10),
+          _buildFanqieImportButton(),
         ],
       ),
     );
@@ -355,6 +387,61 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
+  Widget _buildFanqieImportButton() {
+    const bg = Color(0xFFE8F1FC);
+    const hover = Color(0xFFD8E7F8);
+    if (_sidebarCollapsed) {
+      return Tooltip(
+        message: '在线导入番茄小说',
+        child: Material(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            onTap: _importFanqie,
+            borderRadius: BorderRadius.circular(8),
+            hoverColor: hover,
+            child: const SizedBox(
+              height: 40,
+              child: Icon(Icons.cloud_download_outlined,
+                  size: 20, color: AppTheme.primaryDark),
+            ),
+          ),
+        ),
+      );
+    }
+    return SizedBox(
+      width: double.infinity,
+      child: Material(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: _importFanqie,
+          borderRadius: BorderRadius.circular(8),
+          hoverColor: hover,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.cloud_download_outlined,
+                    size: 15, color: AppTheme.primaryDark),
+                SizedBox(width: 6),
+                Text(
+                  '在线导入(番茄)',
+                  style: TextStyle(
+                    color: AppTheme.primaryDark,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildBookList() {
     if (_loading) {
       return const Center(
@@ -369,7 +456,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: 24, vertical: 32),
           child: Text(
-            '点击上方按钮导入 epub 小说',
+            '书架为空,点击上方按钮导入小说',
             textAlign: TextAlign.center,
             style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
           ),
@@ -438,11 +525,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              '导入 epub 格式的小说开始阅读',
+              '导入本地 epub 或在线番茄小说开始阅读',
               style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
             ),
             const SizedBox(height: 24),
             _buildInlineImportButton(),
+            const SizedBox(height: 10),
+            _buildInlineFanqieButton(),
           ],
         ),
       ),
@@ -471,6 +560,37 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 _importing ? '导入中…' : '选择 epub 文件',
                 style: const TextStyle(
                   color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInlineFanqieButton() {
+    return Material(
+      color: const Color(0xFFE8F1FC),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: _importFanqie,
+        borderRadius: BorderRadius.circular(8),
+        hoverColor: const Color(0xFFD8E7F8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cloud_download_outlined,
+                  size: 16, color: AppTheme.primaryDark),
+              SizedBox(width: 8),
+              Text(
+                '在线导入(番茄小说)',
+                style: TextStyle(
+                  color: AppTheme.primaryDark,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),

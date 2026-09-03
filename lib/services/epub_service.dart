@@ -280,6 +280,21 @@ class EpubService {
     }
   }
 
+  /// 供其他来源(如番茄小说下载)把 Book 持久化到书架存储目录,与 EPUB 书同库。
+  static Future<void> saveBook(Book book) => _writeBookFile(book);
+
+  /// 把封面字节写入书架存储目录(与 EPUB 封面同目录),返回 coverPath。
+  /// 空字节或写入失败返回 null。
+  static Future<String?> saveCover(String bookId, List<int> bytes) async {
+    if (bytes.isEmpty) return null;
+    try {
+      final dir = await _booksDir();
+      return await _writeBytes(dir, bookId, bytes);
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<List<BookMeta>> listBooks() async {
     final dir = await _booksDir();
     if (!await dir.exists()) return const [];

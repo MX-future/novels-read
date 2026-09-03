@@ -28,6 +28,9 @@ dependencies:
   # HTML 转纯文本
   html: ^0.15.4
 
+  # 番茄小说在线下载(网络请求)
+  http: ^1.2.0
+
   # 直接读取 epub(zip) 封面兜底
   archive: ^3.6.1
   xml: ^6.6.1
