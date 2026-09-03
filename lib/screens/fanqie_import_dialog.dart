@@ -45,12 +45,14 @@ class FanqieImportDialog extends StatefulWidget {
 
 class _FanqieImportDialogState extends State<FanqieImportDialog> {
   final TextEditingController _input = TextEditingController();
+  final TextEditingController _cookieCtl = TextEditingController();
   final TextEditingController _startCtl = TextEditingController();
   final TextEditingController _endCtl = TextEditingController();
 
   bool _busy = false; // 正在查询书籍
   bool _downloading = false; // 正在下载
   bool _cancelRequested = false;
+  bool _cookieExpanded = false; // Cookie 输入区展开
   String? _error;
   String? _fieldError; // 范围输入校验错误
   FanqieBookMeta? _meta;
@@ -59,6 +61,7 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
   @override
   void dispose() {
     _input.dispose();
+    _cookieCtl.dispose();
     _startCtl.dispose();
     _endCtl.dispose();
     super.dispose();
@@ -133,6 +136,9 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
         catalog: meta.chapters,
         startOrder: s,
         endOrder: e,
+        cookie: _cookieCtl.text.trim().isEmpty
+            ? null
+            : _cookieCtl.text.trim(),
         onProgress: (v) {
           if (mounted) setState(() => _stats = v);
         },
@@ -363,8 +369,16 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
             ],
           ),
           const SizedBox(height: 6),
-          const Text('留空表示从第 1 章到最后一章;付费/VIP 章节会自动跳过',
-              style: TextStyle(color: AppTheme.textTertiary, fontSize: 11)),
+          Text(
+            meta.lockedCount > 0 && !_cookieExpanded
+                ? '留空表示从第 1 章到最后一章;付费/VIP 章节默认跳过,可展开下方"登录 Cookie"后下载'
+                : '留空表示从第 1 章到最后一章',
+            style: const TextStyle(color: AppTheme.textTertiary, fontSize: 11),
+          ),
+          if (meta.lockedCount > 0) ...[
+            const SizedBox(height: 10),
+            _buildCookieSection(),
+          ],
           if (_fieldError != null) ...[
             const SizedBox(height: 8),
             Text(_fieldError!,
@@ -401,14 +415,94 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
             ],
           ),
           // 预览:书架无此书时提示将新加入
-          if (free == 0)
+          if (free == 0 && !_cookieExpanded)
             const Padding(
               padding: EdgeInsets.only(top: 2),
-              child: Text('该范围全部为付费章节,没有可免费下载的内容',
+              child: Text('该范围全部为付费章节,填写上方"登录 Cookie"后才能下载',
                   style: TextStyle(color: Color(0xFFD64545), fontSize: 12)),
             ),
         ],
       ),
+    );
+  }
+
+  /// 登录 Cookie 输入区:粘贴浏览器登录番茄后的 Cookie,用于下载 VIP/付费章。
+  Widget _buildCookieSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _cookieExpanded = !_cookieExpanded),
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              children: [
+                Icon(
+                  _cookieExpanded
+                      ? Icons.expand_less
+                      : Icons.key_rounded,
+                  size: 15,
+                  color: const Color(0xFFB07C2F),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _cookieExpanded
+                      ? '收起登录 Cookie(可选)'
+                      : '登录 Cookie(可选) — 下载 VIP/付费章节',
+                  style: const TextStyle(
+                    color: Color(0xFFB07C2F),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_cookieExpanded) ...[
+          const SizedBox(height: 4),
+          TextField(
+            controller: _cookieCtl,
+            enabled: !_downloading,
+            maxLines: 2,
+            minLines: 2,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: InputDecoration(
+              hintText: '粘贴 Cookie(浏览器登录 fanqienovel.com 后,从开发者工具复制)',
+              hintStyle: const TextStyle(
+                  color: AppTheme.textTertiary, fontSize: 12),
+              filled: true,
+              fillColor: const Color(0xFFFFFAF1),
+              isDense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFFF0DFC0)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFFF0DFC0)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: AppTheme.primary, width: 1.4),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            '说明:在浏览器登录番茄小说后按 F12,切到 Network 标签,点任意请求,'
+            '复制 Cookie 请求头的值粘贴到上方。Cookie 仅在本次下载时携带、'
+            '不保存到书架;账号无该章阅读权限时仍会跳过——VIP 正文只能靠账号'
+            '权限获取,不存在匿名通道。',
+            style: TextStyle(
+                color: AppTheme.textTertiary, fontSize: 11, height: 1.5),
+          ),
+        ],
+      ],
     );
   }
 

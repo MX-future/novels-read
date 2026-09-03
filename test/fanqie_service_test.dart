@@ -205,4 +205,90 @@ void main() {
       expect(meta.lockedCount, 1);
     });
   });
+
+  group('FanqieService.normalizeCookie', () {
+    test('空/空白返回 null', () {
+      expect(FanqieService.normalizeCookie(null), isNull);
+      expect(FanqieService.normalizeCookie(''), isNull);
+      expect(FanqieService.normalizeCookie('   '), isNull);
+    });
+
+    test('纯 Cookie 值原样保留', () {
+      expect(FanqieService.normalizeCookie('a=1; b=2'), 'a=1; b=2');
+    });
+
+    test('带 Cookie: 前缀时剥掉前缀', () {
+      expect(
+        FanqieService.normalizeCookie('Cookie: a=1; sessionid=abc'),
+        'a=1; sessionid=abc',
+      );
+      expect(
+        FanqieService.normalizeCookie('cookie: a=1; b=2'),
+        'a=1; b=2',
+      );
+    });
+
+    test('前后空白被裁剪', () {
+      expect(FanqieService.normalizeCookie('  a=1; b=2  '), 'a=1; b=2');
+    });
+  });
+
+  group('FanqieService 试读判定(VIP 正文完整性)', () {
+    test('已知真实字数时:试读短文(<50%)判 preview', () {
+      // 实测:VIP 章 chapterWordNumber=2484,匿名只给约 155 明文试读
+      expect(
+        FanqieService.isPreviewText('废宅停脚步。' * 10, 2484, true),
+        isTrue,
+      );
+    });
+
+    test('已知真实字数时:接近全文的长文不判 preview', () {
+      final full = '甲' * 2400;
+      expect(FanqieService.isPreviewText(full, 2484, true), isFalse);
+    });
+
+    test('字数未知:锁定章极短(<400)判 preview,长文不判', () {
+      expect(FanqieService.isPreviewText('短试读文本', 0, true), isTrue);
+      expect(FanqieService.isPreviewText('长' * 800, 0, true), isFalse);
+    });
+
+    test('字数未知:非锁定章不按长度误伤', () {
+      expect(FanqieService.isPreviewText('短文本', 0, false), isFalse);
+    });
+
+    test('null 正文不判 preview', () {
+      expect(FanqieService.isPreviewText(null, 2484, true), isFalse);
+    });
+
+    test('hasLockedMark:锁定标记识别', () {
+      expect(FanqieService.hasLockedMark(null), isFalse);
+      expect(
+        FanqieService.hasLockedMark({
+          'needPay': 0,
+          'isChapterLock': true,
+          'isPaidStory': false,
+          'isPaidPublication': false,
+        }),
+        isTrue,
+      );
+      expect(
+        FanqieService.hasLockedMark({
+          'needPay': 3,
+          'isChapterLock': false,
+          'isPaidStory': false,
+          'isPaidPublication': false,
+        }),
+        isTrue,
+      );
+      expect(
+        FanqieService.hasLockedMark({
+          'needPay': 0,
+          'isChapterLock': false,
+          'isPaidStory': false,
+          'isPaidPublication': false,
+        }),
+        isFalse,
+      );
+    });
+  });
 }

@@ -40,7 +40,7 @@ lib/
 ├── models/book.dart             # Book / Chapter 模型（id, title, author, chapters, coverPath）
 ├── screens/
 │   ├── library_screen.dart      # 书架页：侧边栏 + 书库网格 + 空状态 + 打开书切换 ReaderScreen
-│   ├── fanqie_import_dialog.dart# 番茄在线导入对话框（链接/ID → 确认书籍与范围 → 进度下载）
+│   ├── fanqie_import_dialog.dart# 番茄在线导入对话框（链接/ID → 确认书籍与范围 → 可选登录Cookie → 进度下载）
 │   └── reader_screen.dart       # 阅读页（1560 行，核心）：沉浸式布局 + 分页 + 键盘 + 搜索/设置/目录对话框
 ├── services/
 │   ├── epub_service.dart        # EPUB 解析（epubx）：章节内容 → 纯文本、封面、元数据；另暴露 saveBook/saveCover 供番茄入库
@@ -66,7 +66,7 @@ assets/
 scripts/
 ├── build_macos.sh               # Release/Debug 构建 + icns 重打包
 └── run_macos.sh                 # flutter run
-test/                            # 91 个用例（pagination/settings/progress/html/models/widget/fanqie）
+test/                            # 101 个用例（pagination/settings/progress/html/models/widget/fanqie）
 ```
 
 ## 4. 功能点
@@ -123,6 +123,9 @@ test/                            # 91 个用例（pagination/settings/progress/h
 
 ### 番茄网络层（services/fanqie/fanqie_service.dart）
 - 匿名可用的三个端点（实测 2026-09-03）：目录 `GET /api/reader/directory/detail?bookId=`、书页 `GET /page/{bookId}`（SSR）、正文 `GET /reader/{itemId}`（SSR 内嵌 `chapterData.content`）
+- **VIP/付费章无匿名通道**：匿名请求 VIP 章时服务端只回约 200 字符试读（`content` 长度 200、而 `chapterWordNumber` 是全章真实字数，如 2484）。要下载 VIP 必须在导入对话框填入**浏览器登录番茄后的 Cookie**（带登录态请求 → 服务端按账号阅读权限返回全文）
+- 正文完整性用 `isPreviewText` 判定：已知字数时明文 < `chapterWordNumber`×50% 判为试读（不入库）；字数未知时锁定章按 <400 字判。真实数据验证：VIP 匿名 155/2484→preview，免费章 2870/2870→全文
+- 带 Cookie 时若 SSR 仍只给试读，会再尝试正文 JSON 接口 `GET /api/reader/full?itemId=`（匿名恒 200 空 body，仅带登录 Cookie 才可能有内容）作兜底
 - 解析：HTML 里嵌的 JSON 用自研平衡括号扫描器 `readJsonObject/extractObjectWithKey` 抽取（按 `"key"` 找下一个 `{`，字符串内 `{}`/转义不误判），避免引入重型解析
 - 章节抓取限速 350ms、单章 20s 超时、失败重试 2 次，避免触发限流
 
@@ -162,14 +165,15 @@ test/                            # 91 个用例（pagination/settings/progress/h
 15. **封面 URL 常无 scheme**：书页 SSR 的 `thumbUri` 可能是 `//p6-...`，`Uri.parse` 会失败；入库前用 `_normalizeUrl` 补 `https:`。
 16. **`originalAuthors` 是数组**：`[{AuthorId,AuthorName}]`，不是字符串；取作者优先 `authorName`，缺失时遍历该数组。
 17. **正文 PUA 解码依赖静态表**：若发现整本正文解出来是乱码/方块，先怀疑番茄更换字体 → 需重新生成 `fanqie_map.dart`（抓 reader SSR 内嵌字体或用 tianhuoDD 字典比对）。
+18. **VIP 下载必须带登录 Cookie，且是"权限换全文"不是破解**：匿名/无效 Cookie 下服务端只给约 200 字试读，`/api/reader/full` 匿名恒 200 空 body。参考仓库（POf-L/Fanqie-novel-Downloader）能下 VIP 是因其内置浏览器登录番茄账号（可到 SVIP）后自动同步 Cookie。本 App 落地方案：导入对话框展开"登录 Cookie(可选)"粘贴浏览器 Cookie（F12 → Network → 任意请求 → Cookie 请求头），请求自动带 `Cookie` 头；账号无该章权限时仍跳过。Cookie 仅内存传递、不落盘、不入书架。
 
 ## 7. 测试
 
 ```bash
-flutter test   # 91 个用例，全部通过
+flutter test   # 101 个用例，全部通过
 ```
 
-覆盖：pagination（分页行高/拼接还原/空行）、reader_settings（默认值/copyWith/序列化/save-load/非法索引 clamp）、progress_store（JSON 结构/损坏容错）、html_text（段落提取）、fanqie_map（表完整性/解码/去标签）、fanqie_service（parseBookId/parseChapters 卷拼接与 VIP 标记/extractObjectWithKey 与 readJsonObject 的引号-转义-花括号扫描）、models、widget 冒烟。
+覆盖：pagination（分页行高/拼接还原/空行）、reader_settings（默认值/copyWith/序列化/save-load/非法索引 clamp）、progress_store（JSON 结构/损坏容错）、html_text（段落提取）、fanqie_map（表完整性/解码/去标签）、fanqie_service（parseBookId/parseChapters 卷拼接与 VIP 标记/extractObjectWithKey 与 readJsonObject 的引号-转义-花括号扫描/normalizeCookie/isPreviewText 试读判定/hasLockedMark）、models、widget 冒烟。
 
 ## 8. 常见任务指引
 

@@ -35,16 +35,29 @@ class FanqieService {
   /// 单章失败重试次数。
   static const int _maxRetry = 2;
 
-  static Future<http.Response> _get(String url, {String? referer}) async {
+  static Future<http.Response> _get(String url,
+      {String? referer, String? cookie}) async {
     final headers = <String, String>{
       'User-Agent': _ua,
       'Accept': '*/*',
       'Referer': ?referer,
+      'Cookie': ?cookie,
     };
     final resp = await http
         .get(Uri.parse(url), headers: headers)
         .timeout(_timeout);
     return resp;
+  }
+
+  /// 归一化用户粘贴的 Cookie:容忍整行 `Cookie: a=b; c=d` 或纯 `a=b; c=d`。
+  static String? normalizeCookie(String? raw) {
+    if (raw == null) return null;
+    var s = raw.trim();
+    if (s.isEmpty) return null;
+    if (s.toLowerCase().startsWith('cookie:')) {
+      s = s.substring('cookie:'.length).trim();
+    }
+    return s.isEmpty ? null : s;
   }
 
   static String _body(http.Response resp) =>
@@ -168,19 +181,105 @@ class FanqieService {
     return '';
   }
 
-  /// 抓取并解码单章正文;返回 null 表示该章无正文(VIP 锁定等)。
-  static Future<String?> fetchChapterContent(String itemId) async {
-    final resp =
-        await _get('$host/reader/$itemId', referer: '$host/reader/$itemId');
+  /// 抓取并解码单章正文。
+  ///
+  /// [cookie] 为可选登录态(浏览器登录番茄后复制)。匿名时 VIP/付费章服务端
+  /// 只返回约 200 字符试读;带有效登录 Cookie 且账号具备阅读权限时才返回全文。
+  /// 返回 null 表示该章无正文;返回结果的 [FanqieChapterFetch.preview] 为 true
+  /// 表示只拿到试读片段(权限不足),不应入库。
+  static Future<FanqieChapterFetch?> fetchChapterContent(
+    String itemId, {
+    String? cookie,
+  }) async {
+    final ck = normalizeCookie(cookie);
+    // 1) 阅读页 SSR(匿名/登录均可请求)
+    final resp = await _get('$host/reader/$itemId',
+        referer: '$host/reader/$itemId', cookie: ck);
     if (resp.statusCode != 200) {
       throw FanqieException('HTTP ${resp.statusCode}');
     }
     final body = _body(resp);
     final chapter = extractObjectWithKey(body, 'chapterData', has: 'content');
     final content = chapter?['content']?.toString() ?? '';
-    if (content.trim().isEmpty) return null;
-    final text = FanqieMap.decodeChapterHtml(content);
-    return text.trim().isEmpty ? null : text;
+    final wordNumber = _asInt(chapter?['chapterWordNumber']);
+    final lockedMark = hasLockedMark(chapter);
+    var text = _decodeOrNull(content);
+    var preview = isPreviewText(text, wordNumber, lockedMark);
+
+    // 2) SSR 只给试读/空、但带了 Cookie 时,再试正文 JSON 接口一次。
+    //    部分场景完整正文只在该接口按登录态返回。
+    if ((preview || text == null) && ck != null) {
+      try {
+        final alt = await _fetchFullApi(itemId, ck);
+        if (alt != null) {
+          final altText = _decodeOrNull(alt.$1);
+          final altWord = alt.$2;
+          if (!isPreviewText(altText, altWord, lockedMark) &&
+              (altText?.length ?? 0) > (text?.length ?? 0)) {
+            text = altText;
+            preview = false;
+          }
+        }
+      } catch (_) {
+        // JSON 接口失败不阻断:保留 SSR 结果
+      }
+    }
+
+    if (text == null || text.trim().isEmpty) return null;
+    return FanqieChapterFetch(text: text, preview: preview);
+  }
+
+  /// 正文 JSON 接口:返回 (content, chapterWordNumber),匿名多为空 body。
+  static Future<(String, int)?> _fetchFullApi(String itemId, String cookie) async {
+    final resp = await _get('$host/api/reader/full?itemId=$itemId',
+        referer: '$host/reader/$itemId', cookie: cookie);
+    if (resp.statusCode != 200) return null;
+    final body = _body(resp).trim();
+    if (body.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(body);
+      final root = decoded is Map<String, dynamic> ? decoded : null;
+      final data = root?['data'];
+      final cd = data is Map<String, dynamic>
+          ? (data['chapterData'] is Map<String, dynamic>
+              ? data['chapterData'] as Map<String, dynamic>
+              : data)
+          : null;
+      final content = cd?['content']?.toString() ?? '';
+      if (content.trim().isEmpty) return null;
+      return (content, _asInt(cd?['chapterWordNumber']));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String? _decodeOrNull(String htmlContent) {
+    if (htmlContent.trim().isEmpty) return null;
+    final t = FanqieMap.decodeChapterHtml(htmlContent);
+    return t.trim().isEmpty ? null : t;
+  }
+
+  /// 试读判定:已知真实字数且正文明显短于它(番茄试读固定约 1/15),视为试读。
+  /// 字数未知时退回长度阈值(试读固定约 200 HTML 字符/150+ 明文)。
+  /// 公开以便单测覆盖。
+  static bool isPreviewText(String? text, int wordNumber, bool lockedMark) {
+    if (text == null) return false;
+    final len = text.trim().length;
+    if (wordNumber > 0) {
+      if (len < wordNumber * 0.5) return true; // 已知字数:短于一半即试读
+      return false;
+    }
+    // 未知字数:锁定章按明显试读长度判;非锁定章信任正文
+    return lockedMark && len < 400;
+  }
+
+  /// chapterData 是否携带锁定/付费标记(公开便于单测)。
+  static bool hasLockedMark(Map<String, dynamic>? chapter) {
+    if (chapter == null) return false;
+    return _asInt(chapter['needPay']) > 0 ||
+        chapter['isChapterLock'] == true ||
+        chapter['isPaidStory'] == true ||
+        chapter['isPaidPublication'] == true;
   }
 
   /// 从 HTML/JSON 源码中定位第一个包含指定键的 JSON 对象值并解码。
@@ -249,17 +348,22 @@ class FanqieService {
   /// 下载选中的章节范围并入架。
   ///
   /// [catalog] 为全本目录(顺序即阅读顺序);[startOrder]/[endOrder] 为 1-based
-  /// 范围(含端点),null 表示不限。VIP/付费章自动跳过。重复下载同名书时
-  /// 自动续传:已成功下载的章节跳过,与既有章节合并保存。
+  /// 范围(含端点),null 表示不限。重复下载同名书时自动续传:已成功下载的章节
+  /// 跳过,与既有章节合并保存。
+  ///
+  /// [cookie] 为可选登录态。无 Cookie 时 VIP/付费章自动跳过;带 Cookie 时会
+  /// 尝试抓取 VIP 章,仅当服务端返回全文(非试读)才入库,否则按无权限跳过。
   static Future<FanqieDownloadStats> downloadBook({
     required String bookId,
     required FanqieBookMeta meta,
     required List<FanqieChapterItem> catalog,
     int? startOrder,
     int? endOrder,
+    String? cookie,
     void Function(FanqieDownloadStats)? onProgress,
     Future<bool> Function()? isCancelled,
   }) async {
+    final ck = normalizeCookie(cookie);
     final oursId = 'fanqie_$bookId';
 
     // 封面(可选,失败不阻断)
@@ -299,7 +403,7 @@ class FanqieService {
     var lockedSkip = 0;
     var already = 0;
     var failed = 0;
-    var fetched = 0;
+    var fetchedOk = 0;
     final total = inRange.length;
 
     Future<void> persistPartial() async {
@@ -309,7 +413,7 @@ class FanqieService {
     void report({String? currentTitle}) {
       onProgress?.call(FanqieDownloadStats(
         total: total,
-        fetched: fetched,
+        fetched: fetchedOk,
         already: already,
         lockedSkipped: lockedSkip,
         failed: failed,
@@ -319,13 +423,15 @@ class FanqieService {
 
     var sinceLastSave = 0;
     for (final ch in inRange) {
-      if (ch.locked) {
-        lockedSkip += 1;
-        continue;
-      }
+      // 已下载过(含上次会话落盘):计入 already,保留既有正文
       if (newContent.containsKey(ch.title) &&
           newContent[ch.title]!.isNotEmpty) {
         already += 1;
+        continue;
+      }
+      // 锁定章:无 Cookie 一律跳过;有 Cookie 才进入下方抓取尝试
+      if (ch.locked && ck == null) {
+        lockedSkip += 1;
         continue;
       }
       if (isCancelled != null && await isCancelled()) {
@@ -333,25 +439,30 @@ class FanqieService {
       }
       report(currentTitle: ch.title);
 
-      String? content;
+      FanqieChapterFetch? result;
       for (var attempt = 0; attempt <= _maxRetry; attempt++) {
         try {
-          content = await fetchChapterContent(ch.itemId);
+          result = await fetchChapterContent(ch.itemId, cookie: ck);
           break;
         } catch (_) {
           if (attempt == _maxRetry) {
-            content = null;
+            result = null;
           } else {
             await Future<void>.delayed(const Duration(seconds: 1));
           }
         }
       }
 
-      if (content == null) {
-        failed += 1;
+      if (result == null || result.preview) {
+        // 无正文或只拿到试读片段:锁定章记跳过,普通章记失败
+        if (ch.locked) {
+          lockedSkip += 1;
+        } else {
+          failed += 1;
+        }
       } else {
-        newContent[ch.title] = content;
-        fetched += 1;
+        newContent[ch.title] = result.text;
+        fetchedOk += 1;
         sinceLastSave += 1;
         if (sinceLastSave >= _persistEvery) {
           await persistPartial();
@@ -365,13 +476,13 @@ class FanqieService {
       await Future<void>.delayed(requestInterval);
     }
 
-    if (fetched + already > 0) {
+    if (fetchedOk + already > 0) {
       await persistPartial();
     }
 
     final stats = FanqieDownloadStats(
       total: total,
-      fetched: fetched,
+      fetched: fetchedOk,
       already: already,
       lockedSkipped: lockedSkip,
       failed: failed,
@@ -450,6 +561,15 @@ class FanqieBookMeta {
   });
 
   int get lockedCount => chapters.where((c) => c.locked).length;
+}
+
+/// 单章抓取结果:[text] 为解码后正文;[preview] 为 true 表示只拿到试读片段
+/// (服务端未按登录态放行全文),不应入库。
+class FanqieChapterFetch {
+  final String text;
+  final bool preview;
+
+  const FanqieChapterFetch({required this.text, required this.preview});
 }
 
 /// 下载进度统计。
