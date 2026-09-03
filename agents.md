@@ -32,6 +32,31 @@ bash scripts/run_macos.sh
 
 `build_macos.sh` 还包含 **post-build 钩子**：用 `iconutil` 重新打包 icns（修复 Xcode 资产目录把 PNG 错标 RGBA 的 bug，见坑 #3）。构建后脚本会输出 `==> icns 已用 iconutil 重新打包`。
 
+### 发布新版本（GitHub Releases，本机无 gh CLI）
+
+本机**未安装 `gh`**，但 macOS 钥匙串存有 GitHub https PAT（账号 MX-future / 43166542，40 位），可 `git credential fill` 取出后走 API 直传（token 只在 shell 变量中传递，勿打印/勿落盘）：
+
+```bash
+APP="build/macos/Build/Products/Release/书架.app"
+TOKEN=$(printf 'protocol=https\nhost=github.com\n\n' | git credential fill 2>/dev/null | sed -n 's/^password=//p')
+
+# 1) 打包 zip（ditto 保留权限/符号链接，47MB app → ~18MB）
+ditto -c -k --sequesterRsrc --keepParent "$APP" default.zip
+
+# 2) 建 Release（tag 延续 v1.1 → v1.2；⚠️ 不要照抄 pubspec 的 version，其仍为 1.0.0+1 未与 tag 同步）
+curl -s -H "Authorization: token $TOKEN" -H "Accept: application/vnd.github+json" \
+  -d "$(python3 -c "import json;print(json.dumps({'tag_name':'v1.2','name':'书架 v1.2','body':open('body.md').read(),'target_commitish':'main'}))")" \
+  https://api.github.com/repos/MX-future/novels-read/releases   # → 取 .id 作 release_id
+
+# 3) 传资产（Content-Type 必须 application/zip）
+curl -s -H "Authorization: token $TOKEN" -H "Content-Type: application/zip" \
+  --data-binary @default.zip \
+  "https://uploads.github.com/repos/MX-future/novels-read/releases/{release_id}/assets?name=default.zip"
+```
+
+- 资产沿用 `default.zip` 文件名（与既有 release 一致）；既有 tag：`V1.0`、`v1.1`、`v1.2`。
+- 建 Release 与上传分两条命令执行，失败可安全重试；用 `python3 -c` 解析返回 JSON 提取 `id`/`browser_download_url`。
+
 ## 3. 项目结构
 
 ```
@@ -191,6 +216,7 @@ flutter test   # 101 个用例，全部通过
 | 加出网请求/改番茄端点 | `lib/services/fanqie/fanqie_service.dart`（host/端点/UA/限速都在顶部） |
 | 番茄正文解不开（乱码） | 重新生成 `lib/services/fanqie/fanqie_map.dart`（字体表更新，见坑 #17） |
 | 改在线导入对话框样式/流程 | `lib/screens/fanqie_import_dialog.dart` |
+| 发布新版本到 GitHub Releases | 见第 2 节"发布新版本"（无 gh CLI，钥匙串 PAT + API 直传；tag 用 vX.Y 延续，勿照抄 pubspec version） |
 
 ## 9. 注意事项
 
