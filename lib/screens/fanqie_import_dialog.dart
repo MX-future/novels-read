@@ -10,6 +10,7 @@ class FanqieImportResult {
   final bool cancelled;
   final int total;
   final int fetched;
+  final int refreshed;
   final int already;
   final int lockedSkip;
   final int failed;
@@ -19,6 +20,7 @@ class FanqieImportResult {
     required this.cancelled,
     required this.total,
     required this.fetched,
+    this.refreshed = 0,
     required this.already,
     required this.lockedSkip,
     required this.failed,
@@ -54,6 +56,7 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
   bool _cancelRequested = false;
   bool _cookieExpanded = false; // Cookie 输入区展开
   bool _relayEnabled = false; // 备用中转源开关(默认关,实验性)
+  bool _overwrite = false; // 覆盖更新已有章节(默认关,重复下载时用)
   String? _error;
   String? _fieldError; // 范围输入校验错误
   FanqieBookMeta? _meta;
@@ -141,6 +144,7 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
             ? null
             : _cookieCtl.text.trim(),
         useRelay: _relayEnabled,
+        overwrite: _overwrite,
         onProgress: (v) {
           if (mounted) setState(() => _stats = v);
         },
@@ -152,6 +156,7 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
         cancelled: _cancelRequested,
         total: stats.total,
         fetched: stats.fetched,
+        refreshed: stats.refreshed,
         already: stats.already,
         lockedSkip: stats.lockedSkipped,
         failed: stats.failed,
@@ -377,8 +382,10 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
                 : '留空表示从第 1 章到最后一章',
             style: const TextStyle(color: AppTheme.textTertiary, fontSize: 11),
           ),
+          const SizedBox(height: 8),
+          _buildOverwriteToggle(),
           if (meta.lockedCount > 0) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
             _buildCookieSection(),
             const SizedBox(height: 6),
             _buildRelayToggle(),
@@ -508,6 +515,68 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
           ),
         ],
       ],
+    );
+  }
+
+  /// 覆盖更新开关(默认关):重复下载同一本书时,默认只补新增章节;开启后
+  /// 范围内已有章节会重新抓取覆盖,用于作者修订旧章或上次内容残缺需刷新的场景。
+  Widget _buildOverwriteToggle() {
+    final on = _overwrite;
+    return InkWell(
+      onTap: _downloading ? null : () => setState(() => _overwrite = !_overwrite),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: on ? const Color(0xFFFFF6E8) : const Color(0xFFF5F8FC),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: on ? const Color(0xFFB07C2F) : AppTheme.divider,
+            width: on ? 1.2 : 1,
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.refresh_rounded,
+                size: 15,
+                color: on ? const Color(0xFFB07C2F) : const Color(0xFF9AA7B8)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    on ? '覆盖更新已开启' : '覆盖更新已有章节',
+                    style: TextStyle(
+                      color: on ? const Color(0xFFB07C2F) : AppTheme.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    on
+                        ? '范围内已有章节将重新抓取并覆盖写入——适用于作者修订旧章、'
+                            '或上次下载内容残缺需刷新的情况;耗时更长。'
+                        : '重复下载同一本书时,默认只补新增章节、已有章节不重新抓取。'
+                            '若打开后仍是旧内容,开启本项可整体刷新。',
+                    style: const TextStyle(
+                        color: AppTheme.textTertiary,
+                        fontSize: 11,
+                        height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: _buildTogglePill(on),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -747,7 +816,11 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
     final total = stats?.total ?? meta?.chapters.length ?? 0;
     final done = stats == null
         ? 0
-        : stats.fetched + stats.already + stats.lockedSkipped + stats.failed;
+        : stats.fetched +
+            stats.refreshed +
+            stats.already +
+            stats.lockedSkipped +
+            stats.failed;
     final value = total <= 0 ? 0.0 : (done / total).clamp(0.0, 1.0);
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
@@ -803,6 +876,7 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
             stats == null
                 ? ''
                 : '新下载 ${stats.fetched} 章'
+                    '${stats.refreshed > 0 ? ' · 刷新 ${stats.refreshed} 章' : ''}'
                     '${stats.already > 0 ? ' · 已有 ${stats.already} 章' : ''}'
                     '${stats.lockedSkipped > 0 ? ' · 跳过 VIP ${stats.lockedSkipped} 章' : ''}'
                     '${stats.failed > 0 ? ' · 失败 ${stats.failed} 章' : ''}',

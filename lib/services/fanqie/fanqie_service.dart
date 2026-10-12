@@ -406,6 +406,11 @@ class FanqieService {
   /// 尝试抓取 VIP 章,仅当服务端返回全文(非试读)才入库,否则按无权限跳过。
   /// [useRelay] 为可选备用中转源(默认关闭):开启后,锁章不再因无 Cookie 直接
   /// 跳过,而是先走官方通道、拿不到全文时再尝试第三方中转(见 [fetchChapterContent])。
+  ///
+  /// [overwrite] 为覆盖更新开关(默认关闭)。默认续传语义:已入库章节按标题命中
+  /// 后直接跳过,不重新抓取(省流量/可断点续传);开启后,范围内的**已有章节
+  /// 也会重新抓取并覆盖写入**——适用于作者修订旧章、或上次下载内容残缺需要
+  /// 刷新的场景。重抓失败时保留既有正文,不会"越更新越少"。
   static Future<FanqieDownloadStats> downloadBook({
     required String bookId,
     required FanqieBookMeta meta,
@@ -414,6 +419,7 @@ class FanqieService {
     int? endOrder,
     String? cookie,
     bool useRelay = false,
+    bool overwrite = false,
     void Function(FanqieDownloadStats)? onProgress,
     Future<bool> Function()? isCancelled,
   }) async {
@@ -458,6 +464,7 @@ class FanqieService {
     var already = 0;
     var failed = 0;
     var fetchedOk = 0;
+    var refreshed = 0;
     final total = inRange.length;
 
     Future<void> persistPartial() async {
@@ -468,6 +475,7 @@ class FanqieService {
       onProgress?.call(FanqieDownloadStats(
         total: total,
         fetched: fetchedOk,
+        refreshed: refreshed,
         already: already,
         lockedSkipped: lockedSkip,
         failed: failed,
@@ -477,9 +485,11 @@ class FanqieService {
 
     var sinceLastSave = 0;
     for (final ch in inRange) {
-      // 已下载过(含上次会话落盘):计入 already,保留既有正文
-      if (newContent.containsKey(ch.title) &&
-          newContent[ch.title]!.isNotEmpty) {
+      final hadOld = newContent.containsKey(ch.title) &&
+          newContent[ch.title]!.isNotEmpty;
+      // 已下载过(含上次会话落盘):默认续传语义计入 already 并保留既有正文;
+      // 开启覆盖更新时不再跳过,重新抓取刷新正文。
+      if (hadOld && !overwrite) {
         already += 1;
         continue;
       }
@@ -510,7 +520,9 @@ class FanqieService {
       }
 
       if (result == null || result.preview) {
-        // 无正文或只拿到试读片段:锁定章记跳过,普通章记失败
+        // 无正文或只拿到试读片段:锁定章记跳过,普通章记失败。
+        // 此处不清除 newContent 中的既有正文——覆盖模式下重抓失败时保留原内容,
+        // 避免"越更新越少"。
         if (ch.locked) {
           lockedSkip += 1;
         } else {
@@ -518,7 +530,11 @@ class FanqieService {
         }
       } else {
         newContent[ch.title] = result.text;
-        fetchedOk += 1;
+        if (hadOld) {
+          refreshed += 1; // 覆盖更新:本次刷新的既有章节
+        } else {
+          fetchedOk += 1; // 本次新增章节
+        }
         sinceLastSave += 1;
         if (sinceLastSave >= _persistEvery) {
           await persistPartial();
@@ -532,13 +548,14 @@ class FanqieService {
       await Future<void>.delayed(requestInterval);
     }
 
-    if (fetchedOk + already > 0) {
+    if (fetchedOk + refreshed + already > 0) {
       await persistPartial();
     }
 
     final stats = FanqieDownloadStats(
       total: total,
       fetched: fetchedOk,
+      refreshed: refreshed,
       already: already,
       lockedSkipped: lockedSkip,
       failed: failed,
@@ -632,6 +649,7 @@ class FanqieChapterFetch {
 class FanqieDownloadStats {
   final int total;
   final int fetched;
+  final int refreshed;
   final int already;
   final int lockedSkipped;
   final int failed;
@@ -640,6 +658,7 @@ class FanqieDownloadStats {
   const FanqieDownloadStats({
     required this.total,
     required this.fetched,
+    this.refreshed = 0,
     required this.already,
     required this.lockedSkipped,
     required this.failed,

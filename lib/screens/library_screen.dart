@@ -82,21 +82,26 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
     String msg;
     if (result.cancelled) {
-      final kept = result.fetched + result.already;
+      final kept = result.fetched + result.refreshed + result.already;
       msg = kept > 0
           ? '已取消:《${result.title}》保留已下载 $kept 章,可再次导入续传'
           : '已取消下载';
-    } else if (result.fetched + result.already == 0) {
+    } else if (result.fetched + result.refreshed + result.already == 0) {
       msg = '《${result.title}》没有可下载的免费章节'
           '${result.lockedSkip > 0 ? '(VIP ${result.lockedSkip} 章已跳过)' : ''}';
     } else {
       final parts = <String>[
         '《${result.title}》导入完成:新增 ${result.fetched} 章'
       ];
-      if (result.already > 0) parts.add('已有 ${result.already} 章');
+      if (result.refreshed > 0) parts.add('刷新 ${result.refreshed} 章');
+      if (result.already > 0) parts.add('已有 ${result.already} 章跳过');
       if (result.lockedSkip > 0) parts.add('跳过 VIP ${result.lockedSkip} 章');
       if (result.failed > 0) parts.add('失败 ${result.failed} 章');
       msg = parts.join(' · ');
+      // 有既有章节被跳过且本次未执行刷新时,提示可开启覆盖更新
+      if (result.already > 0 && result.refreshed == 0) {
+        msg += ';若打开后内容未更新,可重新导入并勾选「覆盖更新」';
+      }
     }
     _showToast(msg);
   }
