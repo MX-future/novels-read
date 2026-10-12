@@ -194,15 +194,25 @@ test/                            # 101 个用例（pagination/settings/progress/
 19. **存在"网页需 VIP、但手机 App 游客可免费读"的书（分端权限）**：实测《修仙之吞天诀》(7393543333957618713) 783 章中 773 章 web `isChapterLock`，web 匿名只回 ~200 字试读；但手机 App **游客态**可全本读。这不是解析 bug，是番茄按端下发权限：正文权限由 App 通道（com.dragon.read，`api5-normal-sinfonlinec.fqnovel.com/reading/reader/full/v1/`）决定，而该通道每请求要 X-Gorgon/X-Argus/X-Ladon/X-Helios/X-Medusa 签名（libmetasec_ml.so 生成），**无公开可运行实现**（fanqie-dl 缺 `lib/so_code.bin` 运行段且 Helios/Medusa 未完成）。遇到"web 全锁但 App 能读"的书：web Cookie 通道无效（该书 web 侧要 VIP 账号）。
 20. **"仅 App 免费"书的可行解：社区中转源（可选兜底）**：`http://101.35.133.34:5000/api/raw_full?item_id=`（ying-ck/fanqienovel-downloader 所用，2026-09-03 实测匿名返回全文，锁章 2150 字命中，纯 HTTP、~1s）。已接入：`FanqieService` 加 `relayHost` 常量 + `fetchChapterContent(useRelay:)`/`downloadBook(useRelay:)`，对话框"备用源(实验性)"开关（默认关）。注意：**第三方非官方服务器**（内容过境第三方、仅 HTTP、可能失效/限流），且疑似即 App 通道的聚合；不要做成默认/唯一通道，Cookie 仍是 web-VIP 书首选。若中转失效，服务端风控升级或作者关停是主因，勿花时间修本端。
 21. **重复下载同一本书默认是"增量补齐"，不会刷新旧章**（2026-10-12 修复）：`downloadBook` 以**章节标题**为键（`existing[ch.title]`）判定是否已下载，命中即 `continue` —— 磁盘 JSON 会被重写，但内容基底是旧正文，所以用户"重新下载最新版"后打开仍是旧内容。叠加"新增章节恰为 VIP 被跳过"时，整本书零变化。已加 `overwrite` 参数 + 导入确认页「覆盖更新已有章节」开关（默认关）：开启后范围内已有章节重新抓取覆盖写入，**重抓失败保留旧正文**（不会越更新越少）；统计新增 `refreshed` 字段，书架完成提示会区分"新增/刷新/已有跳过"，并在有跳过且未刷新时提示可勾选覆盖更新。⚠️ 标题是匹配键：若作者改了章节标题，该章会被当作新章重下，旧标题内容被丢弃（`_persistBook` 只写 catalog 内章节）。
-22. **`flutter test` 偶发 hooks_runner 崩溃（本机环境，非代码问题）**：报 `FileSystemException: Cannot delete file, OS Error: Operation not permitted`，栈在 `hooks_runner/.../build_runner.dart`。本机存在外部进程占用/干预 `.dart_tool/hooks_runner` 的现象（同类干扰还有反复重建 `.git/index.lock`）。处理：`flutter clean && flutter pub get` 后恢复；`flutter build macos --release` 一般不受影响。⚠️ **不要只 `mv` 掉 hooks_runner** —— `shared/objective_c/build/*/objective_c.dylib` 是 native-assets 产物，缺失会让 macOS 构建报 `Target install_code_assets failed ... lipo: can't open input file: .../objective_c.dylib`。
+22. **`flutter test` 偶发 hooks_runner 崩溃（本机环境，非代码问题）**：报 `FileSystemException: Cannot delete file, OS Error: Operation not permitted`，栈在 `hooks_runner/.../build_runner.dart`。本机存在外部进程占用/干预 `.dart_tool/hooks_runner` 的现象（同类干扰还有反复重建 `.git/index.lock`）。处理：`flutter clean && flutter pub get` 后恢复；`flutter build macos --release` 一般不受影响（构建链路走另一套产物路径，实测可通过）。2026-10-12 复现一次更严重的形态：clean+pub get 后仍崩，因为 flutter 子进程删除 `.dart_tool/hooks_runner` 下文件时被宿主文件策略拒（`rm -f <单文件>` 在 shell 里可以删，但 tool 子进程删不掉）。有效解法：先用 shell `rm -rf .dart_tool/hooks_runner`（或 `rm -f` 具体文件）清干净，再 `flutter build macos --release` 触发重建，之后 `flutter test > /tmp/log 2>&1`（**写成重定向到文件再读**，`flutter test | grep ...` 这种管道形式会被安全策略拦掉、拿不到结果）即可跑通。⚠️ **不要只 `mv` 掉 hooks_runner** —— `shared/objective_c/build/*/objective_c.dylib` 是 native-assets 产物，缺失会让 macOS 构建报 `Target install_code_assets failed ... lipo: can't open input file: .../objective_c.dylib`。
+
+23. **进入阅读页"迅速闪烁几下"（2026-10-12 修复）**：三层根因叠加——
+   ① **侧边栏收起动画导致的连续重排**：`library_screen` 里侧边栏是 `AnimatedContainer`（240→0，220ms），正文宽度因此每帧都变；旧 `_onLayout()` 一发现尺寸变化就 `_pagesCache.clear()` + 立即重排，重排期间 `_ready=false` 显示 loading，完成又显示正文 → 下一帧尺寸再变又回 loading，形成"loading ↔ 正文"每帧交替（≈十几帧），观感即闪烁。
+   ② **设置加载引发的重复重排/换色**：`ReaderScreen._init()` 里 `await ReaderSettings.load()` 每次都 new 一个实例赋给 `ReaderSettings.current`，`ValueNotifier` 因引用不同必发通知 → `_onSettingsChanged()` 又清缓存并把 `_pageSize` 置零 → 再重排一次；若磁盘主题≠内存默认，还会整屏换色闪一下。
+   ③ **分页可能"无人触发"**：进度恢复（`_chapterIndex` 变化）后若尺寸不再变化，旧的 `_onLayout` 不会再被调用，分页依赖巧合的布局变化。
+   修法：
+   - `reader_screen.dart`：`_onLayout` 只更新 `_pageSize` 并 `_schedulePaginate()`（**120ms 防抖**，吸收动画/窗口缩放期间的连续尺寸变化，稳定后只重排一次）；新增 `_paginatedSize` 记录缓存对应的排版尺寸，判定"缓存是否可用"取代"每次尺寸变化就清缓存"，重排期间**保留当前页继续显示**（`_buildPageArea` 不再以 `_paginating` 为 loading 条件，只看 `_ready`/是否有页）；`_paginateCurrentChapter` 只保留当前章缓存（`removeWhere`）防内存增长；`_init()` 末尾主动 `_schedulePaginate()` 兜底；`dispose` 取消防抖 timer；`_PageContent` 正文包 `ClipRect` 防重排瞬间溢出绘制。
+   - `reader_settings.dart`：实现 `operator ==`/`hashCode`，`load()` 仅在值与当前不同时才赋值（相同则不发通知）。
+   - `main.dart`：启动即 `WidgetsFlutterBinding.ensureInitialized(); await ReaderSettings.load();`，首帧就是用户主题，消除进入阅读页的换色闪。
+   ⚠️ 改动要点：**不要再对 `_pagesCache` 做"尺寸一变就 clear"**，否则闪烁回归；判断缓存有效性一律用 `_paginatedSize == _pageSize`。
 
 ## 7. 测试
 
 ```bash
-flutter test   # 101 个用例，全部通过
+flutter test   # 104 个用例，全部通过
 ```
 
-覆盖：pagination（分页行高/拼接还原/空行）、reader_settings（默认值/copyWith/序列化/save-load/非法索引 clamp）、progress_store（JSON 结构/损坏容错）、html_text（段落提取）、fanqie_map（表完整性/解码/去标签）、fanqie_service（parseBookId/parseChapters 卷拼接与 VIP 标记/extractObjectWithKey 与 readJsonObject 的引号-转义-花括号扫描/normalizeCookie/isPreviewText 试读判定/hasLockedMark）、models、widget 冒烟。
+覆盖：pagination（分页行高/拼接还原/空行）、reader_settings（默认值/copyWith/序列化/save-load/非法索引 clamp/值相等判定与"值未变不发通知"）、progress_store（JSON 结构/损坏容错）、html_text（段落提取）、fanqie_map（表完整性/解码/去标签）、fanqie_service（parseBookId/parseChapters 卷拼接与 VIP 标记/extractObjectWithKey 与 readJsonObject 的引号-转义-花括号扫描/normalizeCookie/isPreviewText 试读判定/hasLockedMark）、models、widget 冒烟。
 
 ## 8. 常见任务指引
 
@@ -224,6 +234,6 @@ flutter test   # 101 个用例，全部通过
 
 - 应用名显示为"书架"（PRODUCT_NAME），但 README/宣传叫"阅读"，勿混用
 - 书架页打开书后由 `_buildMainArea()` 直接切换为 `ReaderScreen`（非路由跳转），返回用 `onBack` 回调
-- 阅读页 `_pagesCache` 按章节缓存分页结果，字号/边距等设置变化时清缓存重新分页
+- 阅读页分页缓存：`_pagesCache`（仅保留当前章）+ `_paginatedSize`（缓存对应的排版尺寸）。字号/边距变化或尺寸变化时**不作废显示**，由 `_schedulePaginate()` 防抖后重排再替换（见坑 #23，勿改回"一变就 clear"）
 - 书籍数据目录：`~/Library/Containers/com.reader.novelReader/Data/Library/Application Support/novel_reader_books/`（沙箱容器内），每书一个 `{id}.json` + 封面；番茄书 id 形如 `fanqie_7663...`
 - git 用户：zhiqiang.shen / zhiqiang.shen@nufront.com；远程：`git@github.com:MX-future/novels-read.git`

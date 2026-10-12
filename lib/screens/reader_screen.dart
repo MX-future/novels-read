@@ -24,6 +24,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
   static const _windowChannel =
       MethodChannel('com.reader.novelReader/window');
 
+  /// 布局(可用尺寸)变化的防抖窗口。
+  ///
+  /// 进入阅读页时侧边栏收起动画会让正文宽度连续变化约 220ms,窗口缩放同理;
+  /// 若每次变化都立即重排,会与 loading 反复交替造成"闪烁"。故等尺寸稳定
+  /// 一小段时间后只重排一次。
+  static const _layoutDebounce = Duration(milliseconds: 120);
+
   final _focusNode = FocusNode(debugLabel: 'reader');
   final _pagesCache = <int, List<String>>{};
 
@@ -32,6 +39,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
   bool _paginating = false;
   bool _ready = false;
   Size _pageSize = Size.zero;
+
+  /// [_pagesCache] 中结果对应的排版尺寸。尺寸/字号变化后旧结果作废,
+  /// 凭此判定是否需要重排(而不是把缓存整个清掉,那会让当前页瞬间消失)。
+  Size _paginatedSize = Size.zero;
+  Timer? _layoutDebouncer;
   Timer? _saveDebouncer;
   bool _uiVisible = false;
   Timer? _uiHideTimer;
@@ -59,22 +71,26 @@ class _ReaderScreenState extends State<ReaderScreen> {
       _chapterIndex = progress.chapterIndex.clamp(0, maxChapter);
       _pageIndex = progress.pageIndex;
     });
+    // 首帧布局可能已经完成(或还没完成,由 _onLayout 兜底),
+    // 这里主动触发一次,避免进度恢复后因尺寸没再变化而停在 loading。
+    _schedulePaginate();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
     });
   }
 
   void _onSettingsChanged() {
-    // 字号/行距/边距变化,需要重新分页
-    _pagesCache.clear();
-    _pageSize = Size.zero;
+    // 字号/行距/边距变化需要重新分页:作废旧版式结果(旧内容继续显示,
+    // 直到重排完成再替换,避免闪成 loading)
+    _paginatedSize = Size.zero;
     setState(() {});
-    _paginateCurrentChapter();
+    _schedulePaginate();
   }
 
   @override
   void dispose() {
     _saveDebouncer?.cancel();
+    _layoutDebouncer?.cancel();
     _uiHideTimer?.cancel();
     _topBarHideTimer?.cancel();
     _flushProgress();
@@ -137,22 +153,37 @@ class _ReaderScreenState extends State<ReaderScreen> {
   void _onLayout(Size size) {
     if (size == _pageSize) return;
     _pageSize = size;
-    _pagesCache.clear();
-    _paginateCurrentChapter();
+    // 不清缓存:当前页继续按旧版式显示,等尺寸稳定后一次性重排替换
+    _schedulePaginate();
+  }
+
+  /// 防抖后重排当前章:吸收侧边栏收起动画/窗口缩放期间的连续尺寸变化,
+  /// 避免"loading ↔ 正文"高频交替(表现为界面闪烁)。
+  void _schedulePaginate() {
+    _layoutDebouncer?.cancel();
+    _layoutDebouncer = Timer(_layoutDebounce, () {
+      if (mounted) _paginateCurrentChapter();
+    });
   }
 
   Future<void> _paginateCurrentChapter() async {
     if (_pageSize == Size.zero) return;
-    if (_pagesCache.containsKey(_chapterIndex)) {
-      setState(() {
-        _ready = true;
-        _paginating = false;
-      });
+    final cached = _pagesCache[_chapterIndex];
+    // 缓存与当前尺寸匹配:直接可用
+    if (cached != null && _paginatedSize == _pageSize) {
+      if (!_ready || _paginating) {
+        setState(() {
+          _ready = true;
+          _paginating = false;
+        });
+      }
       return;
     }
+    // 已有旧版式内容时(单纯尺寸/字号变化)保持显示,避免闪成 loading
+    final keepVisible = cached != null && cached.isNotEmpty;
     setState(() {
       _paginating = true;
-      _ready = false;
+      if (!keepVisible) _ready = false;
     });
     await Future.delayed(const Duration(milliseconds: 30));
     if (!mounted) return;
@@ -166,9 +197,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
       maxHeight: textMaxHeight,
       style: _textStyle(),
     );
-    _pagesCache[_chapterIndex] = pages;
     if (!mounted) return;
     setState(() {
+      // 只保留当前章,避免换尺寸/切章后缓存无限增长
+      _pagesCache
+        ..removeWhere((key, _) => key != _chapterIndex)
+        ..[_chapterIndex] = pages;
+      _paginatedSize = _pageSize;
       _paginating = false;
       _ready = true;
       _pageIndex = _pageIndex.clamp(0, math.max(0, pages.length - 1));
@@ -538,7 +573,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   Widget _buildPageArea((Color, Color, Color, Color) colors) {
-    if (_paginating || !_ready || _currentPages.isEmpty) {
+    // 注意:这里不看 _paginating——重排时若已有旧内容(尺寸/字号变化),
+    // 继续显示旧内容直到新分页完成,避免闪成 loading
+    if (!_ready || _currentPages.isEmpty) {
       return Center(
         child: SizedBox(
           width: 22,
@@ -728,7 +765,8 @@ class _PageContent extends StatelessWidget {
             ),
           ),
         ),
-        Expanded(child: _buildHighlightedText()),
+        // 包一层裁剪:重排瞬间旧内容按新宽度显示可能超高,避免溢出绘制到页码区
+        Expanded(child: ClipRect(child: _buildHighlightedText())),
       ],
     );
   }

@@ -104,6 +104,46 @@ void main() {
       expect(ReaderSettings.current.value, const ReaderSettings());
     });
 
+    test('值相等判定:内容一致视为相等', () {
+      const a = ReaderSettings(fontSize: 20, theme: ReaderTheme.warm);
+      const b = ReaderSettings(fontSize: 20, theme: ReaderTheme.warm);
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+      expect(a == b.copyWith(padding: 30), isFalse);
+      expect(a == a.copyWith(theme: ReaderTheme.dark), isFalse);
+    });
+
+    test('load 到与当前一致的设置时不触发通知', () async {
+      SharedPreferences.setMockInitialValues({});
+      const settings = ReaderSettings(fontSize: 22, theme: ReaderTheme.sepia);
+      await ReaderSettings.save(settings);
+
+      // current 已是 settings,再 load 一次应完全静默(否则会引发阅读页重复分页/换色)
+      var notified = 0;
+      void listener() => notified++;
+      ReaderSettings.current.addListener(listener);
+      await ReaderSettings.load();
+      ReaderSettings.current.removeListener(listener);
+      expect(notified, 0);
+    });
+
+    test('load 到与当前不同的设置时会通知', () async {
+      SharedPreferences.setMockInitialValues({});
+      ReaderSettings.current.value = const ReaderSettings();
+      await ReaderSettings.save(
+        const ReaderSettings(fontSize: 26, theme: ReaderTheme.dark),
+      );
+      ReaderSettings.current.value = const ReaderSettings();
+
+      var notified = 0;
+      void listener() => notified++;
+      ReaderSettings.current.addListener(listener);
+      await ReaderSettings.load();
+      ReaderSettings.current.removeListener(listener);
+      expect(notified, 1);
+      expect(ReaderSettings.current.value.fontSize, 26);
+    });
+
     test('load 在存档损坏时保持默认(不抛异常)', () async {
       SharedPreferences.setMockInitialValues({
         'reader_settings_v1': '这不是合法 JSON {{{',

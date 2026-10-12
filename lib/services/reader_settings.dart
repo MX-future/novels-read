@@ -130,6 +130,22 @@ class ReaderSettings {
     'arrowKeyMode': arrowKeyMode.index,
   };
 
+  /// 值相等判定:让 [current] 这个 ValueNotifier 在"加载到的设置与内存中
+  /// 完全一致"时不触发通知,避免进入阅读页时无谓地重新分页/换色(闪屏)。
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ReaderSettings &&
+          other.fontSize == fontSize &&
+          other.lineHeight == lineHeight &&
+          other.padding == padding &&
+          other.theme == theme &&
+          other.arrowKeyMode == arrowKeyMode;
+
+  @override
+  int get hashCode =>
+      Object.hash(fontSize, lineHeight, padding, theme, arrowKeyMode);
+
   factory ReaderSettings.fromJson(Map<String, dynamic> json) {
     final arrowIndex = (json['arrowKeyMode'] as int?) ?? 0;
     return ReaderSettings(
@@ -154,7 +170,9 @@ class ReaderSettings {
     if (raw == null) return;
     try {
       final json = jsonDecode(raw) as Map<String, dynamic>;
-      current.value = ReaderSettings.fromJson(json);
+      final loaded = ReaderSettings.fromJson(json);
+      // 与当前值一致时不动 current,避免触发监听者重建(见 operator ==)
+      if (loaded != current.value) current.value = loaded;
     } catch (_) {}
   }
 
