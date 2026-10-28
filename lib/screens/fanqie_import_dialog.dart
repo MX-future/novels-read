@@ -390,9 +390,9 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
           ),
           const SizedBox(height: 8),
           _buildOverwriteToggle(),
+          const SizedBox(height: 6),
+          _buildOfficialToggle(),
           if (meta.lockedCount > 0) ...[
-            const SizedBox(height: 6),
-            _buildOfficialToggle(),
             const SizedBox(height: 6),
             _buildCookieSection(),
             const SizedBox(height: 6),
@@ -486,9 +486,9 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
                   const SizedBox(height: 2),
                   Text(
                     on
-                        ? 'VIP/付费章节直接走番茄 App 官方协议取全文,无需登录 Cookie;'
-                            '为避开限流,每章间隔约 1.1 秒,整本下载耗时更长。'
-                        : '无需账号即可取到 VIP 全文(本机自建设备身份,直连官方接口)。',
+                        ? '正文走番茄 App 官方协议,VIP/付费章同样取全文;'
+                            '为避开限流每章间隔约 1.1 秒,整本耗时更长。'
+                        : '无需账号/Cookie,本机自建设备身份直连官方接口,VIP 章也能取全文。',
                     style: const TextStyle(
                         color: AppTheme.textTertiary,
                         fontSize: 11,
