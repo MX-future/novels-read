@@ -56,6 +56,7 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
   bool _cancelRequested = false;
   bool _cookieExpanded = false; // Cookie 输入区展开
   bool _relayEnabled = false; // 备用中转源开关(默认关,实验性)
+  bool _officialEnabled = false; // App 通道开关(默认关):绕开 web 试读限制
   bool _overwrite = false; // 覆盖更新已有章节(默认关,重复下载时用)
   String? _error;
   String? _fieldError; // 范围输入校验错误
@@ -144,6 +145,7 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
             ? null
             : _cookieCtl.text.trim(),
         useRelay: _relayEnabled,
+        useOfficial: _officialEnabled,
         overwrite: _overwrite,
         onProgress: (v) {
           if (mounted) setState(() => _stats = v);
@@ -377,14 +379,20 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
           ),
           const SizedBox(height: 6),
           Text(
-            meta.lockedCount > 0 && !_cookieExpanded && !_relayEnabled
-                ? '留空表示从第 1 章到最后一章;付费/VIP 章节默认跳过,可展开下方"登录 Cookie"或开启"备用源"后下载'
+            meta.lockedCount > 0 &&
+                    !_cookieExpanded &&
+                    !_relayEnabled &&
+                    !_officialEnabled
+                ? '留空表示从第 1 章到最后一章;付费/VIP 章节默认跳过,'
+                    '可开启"App 通道"、展开"登录 Cookie"或开启"备用源"后下载'
                 : '留空表示从第 1 章到最后一章',
             style: const TextStyle(color: AppTheme.textTertiary, fontSize: 11),
           ),
           const SizedBox(height: 8),
           _buildOverwriteToggle(),
           if (meta.lockedCount > 0) ...[
+            const SizedBox(height: 6),
+            _buildOfficialToggle(),
             const SizedBox(height: 6),
             _buildCookieSection(),
             const SizedBox(height: 6),
@@ -426,13 +434,76 @@ class _FanqieImportDialogState extends State<FanqieImportDialog> {
             ],
           ),
           // 预览:书架无此书时提示将新加入
-          if (free == 0 && !_cookieExpanded && !_relayEnabled)
+          if (free == 0 && !_cookieExpanded && !_relayEnabled && !_officialEnabled)
             const Padding(
               padding: EdgeInsets.only(top: 2),
-              child: Text('该范围全部为付费章节,填写"登录 Cookie"或开启"备用源"后才能下载',
+              child: Text('该范围全部为付费章节,开启"App 通道"或填写"登录 Cookie"后才能下载',
                   style: TextStyle(color: Color(0xFFD64545), fontSize: 12)),
             ),
         ],
+      ),
+    );
+  }
+
+  /// App 通道开关(默认关):走番茄 App 官方协议,由本机自建的设备身份换取
+  /// 解密密钥,可绕开 web 端"匿名只给试读"的限制,无需登录 Cookie。
+  Widget _buildOfficialToggle() {
+    final on = _officialEnabled;
+    return InkWell(
+      onTap: _downloading
+          ? null
+          : () => setState(() => _officialEnabled = !_officialEnabled),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: on ? const Color(0xFFEAF2FC) : const Color(0xFFF5F8FC),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: on ? AppTheme.primary : AppTheme.divider,
+            width: on ? 1.2 : 1,
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.key_rounded,
+                size: 15,
+                color: on ? AppTheme.primary : const Color(0xFF9AA7B8)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    on ? 'App 通道已开启' : 'App 通道(解锁 VIP)',
+                    style: TextStyle(
+                      color: on ? AppTheme.primary : AppTheme.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    on
+                        ? 'VIP/付费章节直接走番茄 App 官方协议取全文,无需登录 Cookie;'
+                            '为避开限流,每章间隔约 1.1 秒,整本下载耗时更长。'
+                        : '无需账号即可取到 VIP 全文(本机自建设备身份,直连官方接口)。',
+                    style: const TextStyle(
+                        color: AppTheme.textTertiary,
+                        fontSize: 11,
+                        height: 1.4),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: _buildTogglePill(on),
+            ),
+          ],
+        ),
       ),
     );
   }

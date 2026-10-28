@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import '../../models/book.dart';
 import '../epub_service.dart';
 import 'fanqie_map.dart';
+import 'official/official_client.dart';
+import 'official/official_session.dart';
 
 /// 番茄小说在线下载服务(无后端,Flutter 直连官方网页接口)。
 ///
@@ -19,6 +21,9 @@ class FanqieService {
   FanqieService._();
 
   static const String host = 'https://fanqienovel.com';
+
+  /// 最近一次 App 通道失败的原因(仅用于 UI 提示,不参与流程控制)。
+  static String? lastOfficialError;
 
   /// 社区中转源(实验性,默认关闭):针对"网页需 VIP、但 App 端游客可免费读"的书。
   /// 这类书官方 web 匿名只给约 200 字试读、无 Cookie/VIP 通道可下全文,而此
@@ -191,18 +196,40 @@ class FanqieService {
 
   /// 抓取并解码单章正文。
   ///
+  /// [bookId] 仅 App 通道需要(批量取正文接口按书维度鉴权),web 通道可省略。
   /// [cookie] 为可选登录态(浏览器登录番茄后复制)。匿名时 VIP/付费章服务端
   /// 只返回约 200 字符试读;带有效登录 Cookie 且账号具备阅读权限时才返回全文。
   /// [useRelay] 为可选备用中转源(默认关闭):当官方通道只给试读/空时,向第三方
   /// 中转源再取一次正文。部分"网页需 VIP、App 游客可读"的书依赖此源才能下全。
+  /// [useOfficial] 为 App 通道开关(默认关闭):走番茄 App 官方协议,由本机自建
+  /// 的设备身份换取解密 seed,可绕过 web 端的试读限制拿到 VIP 全文。
   /// 返回 null 表示该章无正文;返回结果的 [FanqieChapterFetch.preview] 为 true
   /// 表示只拿到试读片段(权限不足),不应入库。
   static Future<FanqieChapterFetch?> fetchChapterContent(
     String itemId, {
+    String? bookId,
     String? cookie,
     bool useRelay = false,
+    bool useOfficial = false,
   }) async {
     final ck = normalizeCookie(cookie);
+
+    // 0) App 通道(可选):一次请求直接拿全文,失败则继续往下走 web 通道。
+    if (useOfficial && bookId != null && bookId.isNotEmpty) {
+      try {
+        final text = await FanqieOfficialSession.instance
+            .chapterText(bookId: bookId, itemId: itemId);
+        if (text != null && text.trim().isNotEmpty) {
+          return FanqieChapterFetch(text: text, preview: false);
+        }
+      } on FanqieOfficialException catch (e) {
+        // 身份/签名级失败:退回 web 通道,不让整次下载中断
+        lastOfficialError = e.message;
+      } catch (e) {
+        lastOfficialError = '$e';
+      }
+    }
+
     // 1) 阅读页 SSR(匿名/登录均可请求)
     final resp = await _get('$host/reader/$itemId',
         referer: '$host/reader/$itemId', cookie: ck);
@@ -419,6 +446,7 @@ class FanqieService {
     int? endOrder,
     String? cookie,
     bool useRelay = false,
+    bool useOfficial = false,
     bool overwrite = false,
     void Function(FanqieDownloadStats)? onProgress,
     Future<bool> Function()? isCancelled,
@@ -493,9 +521,9 @@ class FanqieService {
         already += 1;
         continue;
       }
-      // 锁定章:无 Cookie 且未开备用源时一律跳过;开了备用源则交给下方
-      // fetchChapterContent 按「官方→中转」顺序尝试取全文
-      if (ch.locked && ck == null && !useRelay) {
+      // 锁定章:无 Cookie 且未开备用源/App 通道时一律跳过;开了则由下方
+      // fetchChapterContent 按「App 通道 → 官方 web → 中转」顺序尝试取全文
+      if (ch.locked && ck == null && !useRelay && !useOfficial) {
         lockedSkip += 1;
         continue;
       }
@@ -508,7 +536,10 @@ class FanqieService {
       for (var attempt = 0; attempt <= _maxRetry; attempt++) {
         try {
           result = await fetchChapterContent(ch.itemId,
-              cookie: ck, useRelay: useRelay);
+              bookId: bookId,
+              cookie: ck,
+              useRelay: useRelay,
+              useOfficial: useOfficial);
           break;
         } catch (_) {
           if (attempt == _maxRetry) {

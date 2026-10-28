@@ -15,7 +15,7 @@
 ⚠️ 这两点是本机最容易踩的坑，构建前必须了解：
 
 1. **Xcode 路径**：`xcode-select` 默认指向 `/Library/Developer/CommandLineTools`，直接 `flutter build macos` 会报 `xcrun: unable to find xcodebuild`。必须 `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`（Xcode 16.4 已装）。
-2. **pub.dev 网络**：默认代理下 502（`Proxy failed to establish tunnel`）。必须用国内镜像：`export PUB_HOSTED_URL=https://pub.flutter-io.cn FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`。
+2. **pub.dev 网络**：默认代理下 502（`Proxy failed to establish tunnel`）。必须用国内镜像：`export PUB_HOSTED_URL=https://pub.flutter-io.cn FLUTTER_STORAGE_BASE_URL=https://storage.flutter-io.cn`。若只是改代码、依赖没动而 `flutter build` 卡在 `Downloading packages...`，加 `--no-pub` 跳过依赖解析直接构建。
 
 ### 构建命令
 
@@ -71,7 +71,16 @@ lib/
 │   ├── epub_service.dart        # EPUB 解析（epubx）：章节内容 → 纯文本、封面、元数据；另暴露 saveBook/saveCover 供番茄入库
 │   ├── fanqie/
 │   │   ├── fanqie_service.dart  # 番茄直连服务：目录/书页/正文抓取 + PUA 解码 + 范围下载(续传/跳过VIP/落盘)
-│   │   └── fanqie_map.dart      # 362 项 PUA 码位→汉字 静态解码表 + decodeText/decodeChapterHtml
+│   │   ├── fanqie_map.dart      # 362 项 PUA 码位→汉字 静态解码表 + decodeText/decodeChapterHtml
+│   │   └── official/            # 番茄 App 通道（官方协议，解锁 VIP 正文）
+│   │       ├── crypto.dart      # 纯 Dart MD5 + AES-128-CBC（不引入 crypto/pointycastle）
+│   │       ├── sm3.dart         # 国密 SM3
+│   │       ├── pb.dart          # 极简 protobuf 写入器（X-Argus 用）
+│   │       ├── simon.dart       # SIMON 72 轮分组加密
+│   │       ├── argus.dart       # X-Argus 全链路
+│   │       ├── ladon.dart       # X-Ladon / X-Helios 34 轮
+│   │       ├── official_client.dart  # 设备自建 + registerkey + detail/directory/batch_full + 解密
+│   │       └── official_session.dart # 身份持久化 + seed 刷新 + 串行控速 + 限流退避
 │   ├── progress_store.dart      # 进度持久化（JSON 文件 + SharedPreferences key）
 │   └── reader_settings.dart     # 阅读设置（ValueNotifier 全局共享 + SharedPreferences 持久化）
 ├── theme/app_theme.dart         # 书架页主题常量（AppTheme：background/sidebarBg/primary 等）
@@ -107,6 +116,11 @@ test/                            # 101 个用例（pagination/settings/progress/
 - 流程：粘贴书籍链接或纯 ID → `fetchBookMeta`（目录 + 书页元信息）→ 展示封面/书名/作者/字数/章数/VIP 章数 → 选起始~结束章（留空=全本）→ `downloadBook` 下载入架
 - 书籍落盘复用 `EpubService.saveBook/saveCover`，Book.id 带 `fanqie_` 前缀、`sourcePath='fanqie://{bookId}'`，自动出现在书架
 - 容错：付费/VIP 章自动跳过；单章失败重试 2 次后计入 failed；每下载 10 章落盘一次，取消/中断后已下载部分保留，再次导入同名书自动续传
+- **App 通道（`official/`，默认关）**：不依赖 web 端，直连番茄 App 官方接口取正文，因此无需账号/Cookie 即可拿到 VIP 全文。三级取文顺序 `App 通道 → 官方 web(SSR→Cookie) → 备用源`，App 通道失败自动回落，不中断整次下载
+  - 协议要点：`device_register`(log.snssdk.com，cdid 决定身份归属) → `registerkey`(明文 `LE64(device_id) || 8×0x00`，固定 AES key `ac25c67d…`) → `batch_full`(content = `IV16 || AES-128-CBC(seed, pkcs7(gzip(xhtml)))`，seed 即 registerkey 返回的 16 字节、无 KDF)
+  - 签名：X-Argus(protobuf+SM3+SIMON72) / X-Ladon(34 轮+288 字节表+盐 `3019`) / X-Khronos，全部纯 Dart 实现；`tool/verify_crypto.dart` 是与 Python 参考实现的逐字节对拍脚本（15 项全 PASS）
+  - 限流：`batch_full` 是滑动窗口软限流，返回 HTTP 200 + 0 字节 body。串行 1.1s/章是实测安全值，命中后 20s→40s→80s→160s 退避
+  - 自检脚本：`dart run tool/try_official.dart`（复用本机身份）/ `tool/try_official_provision.dart`（现场注册新设备）
 
 ### 阅读页（reader_screen.dart）—— 核心
 - **沉浸式布局**：macOS 标题栏透明（`titlebarAppearsTransparent + fullSizeContentView + titleVisibility.hidden`），Flutter 内容延伸至标题栏；顶部工具栏（返回/书名/搜索/设置/目录）**仅鼠标移到顶部 100px 区域时显示**，移开立即隐藏
