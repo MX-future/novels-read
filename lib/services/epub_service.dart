@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:xml/xml.dart';
 
 import '../models/book.dart';
+import '../utils/book_id.dart';
 import '../utils/html_text.dart';
 
 /// 解析 EPUB 文件并写入本地存储。
@@ -234,11 +235,10 @@ class EpubService {
     return path;
   }
 
-  static String _generateId(String title, String author) {
-    final raw = '$title|$author';
-    final hash = raw.hashCode.toRadixString(16);
-    return 'book_${hash}_${DateTime.now().millisecondsSinceEpoch}';
-  }
+  static String _generateId(String title, String author) => makeId(title, author);
+
+  /// 生成书籍 id:同名同作者不重复(哈希取自内容),再拼时间戳保证唯一。
+  static String makeId(String title, String author) => makeBookId(title, author);
 
   static Future<Directory> _booksDir() async {
     final support = await getApplicationSupportDirectory();

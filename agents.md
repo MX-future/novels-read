@@ -69,6 +69,8 @@ lib/
 │   └── reader_screen.dart       # 阅读页（1560 行，核心）：沉浸式布局 + 分页 + 键盘 + 搜索/设置/目录对话框
 ├── services/
 │   ├── epub_service.dart        # EPUB 解析（epubx）：章节内容 → 纯文本、封面、元数据；另暴露 saveBook/saveCover 供番茄入库
+│   ├── txt_importer.dart        # TXT 解析：编码探测（UTF-8/16/GBK）+ 章节切分，返回 Book 不落盘
+│   ├── gbk_table.dart           # GBK→Unicode 对照表（base64 内联 48KB，自动生成，勿手改）
 │   ├── fanqie/
 │   │   ├── fanqie_service.dart  # 番茄直连服务：目录/书页/正文抓取 + PUA 解码 + 范围下载(续传/跳过VIP/落盘)
 │   │   ├── fanqie_map.dart      # 362 项 PUA 码位→汉字 静态解码表 + decodeText/decodeChapterHtml
@@ -86,6 +88,7 @@ lib/
 ├── theme/app_theme.dart         # 书架页主题常量（AppTheme：background/sidebarBg/primary 等）
 ├── utils/
 │   ├── html_text.dart           # HTML → 纯文本（保留段落结构）
+│   ├── book_id.dart             # 书籍 id 生成（纯函数，供 epub/txt 共用）
 │   └── pagination.dart          # TextPaginator：TextPainter 按行分页
 └── widgets/
     ├── book_grid_item.dart      # 书库网格卡片（封面 + 书名 + 进度条）
@@ -106,10 +109,19 @@ test/                            # 101 个用例（pagination/settings/progress/
 ## 4. 功能点
 
 ### 书架页（library_screen.dart）
-- 左侧侧边栏：书籍列表（含阅读进度 %），支持折叠；导入 EPUB 按钮（file_picker）+ 在线导入(番茄)次级按钮
+- 左侧侧边栏：书籍列表（含阅读进度 %），支持折叠；导入按钮（file_picker，多选）+ 文件夹批量导入（次级方形按钮）+ 在线导入(番茄)次级按钮
 - 右侧书库网格：封面 + 书名 + 阅读进度条（动态列数，`max(3, width/180)`）
 - 键盘：`←/→` 翻页（书架网格）、`↑/↓` 切换章节、空格翻页
 - 顶部留出 macOS 交通灯区域（40px）
+- 空书架：两个居中按钮**固定 236 宽**（`SizedBox(width: 236)`），避免文字长短造成宽窄不一
+
+### 批量导入本地小说（library_screen `_runBatchImport` + services/txt_importer.dart）
+- 两个入口：`_importBook`（文件多选，`.epub` + `.txt`）、`_importFolder`（选目录后递归扫描两种扩展名）
+- 进度：`_BatchProgress extends ChangeNotifier` + `AlertDialog` 内 `ListenableBuilder`，逐本刷新"已处理/总数·成功/跳过/失败"+ 当前文件名；取消只置标记，由循环在下一本前收尾（不打断正在写的文件）
+- 去重：已存在同 `title|author`、或同 `sourcePath` 的，计为「跳过重复」（前者会删掉刚写入的副本）
+- TXT 编码：BOM → UTF-8 严格解码 → UTF-16 嗅探 → GBK 对照表；GBK 表由 `lib/services/gbk_table.dart` 内联提供，**不引入第三方包**
+- TXT 章节：识别「第 X 章/节/回/卷」标题行（标题正文 ≤30 字且不含句读标点），首个标题前 ≥60 字记为「前言」；识别不到标题则按 3000 字兜底分节
+- 纯逻辑可单测：`TxtImporter.decodeBytes/splitChapters/parseFile` 不依赖 Flutter，`dart run tool/test_txt.dart` 可直接跑
 
 ### 在线导入番茄小说（services/fanqie/ + screens/fanqie_import_dialog.dart）
 - 入口：侧边栏"在线导入(番茄)"按钮 / 空书架中央次级按钮；无关键词搜索（官方搜索被风控，见坑 #14）
@@ -219,6 +231,15 @@ test/                            # 101 个用例（pagination/settings/progress/
    - `reader_settings.dart`：实现 `operator ==`/`hashCode`，`load()` 仅在值与当前不同时才赋值（相同则不发通知）。
    - `main.dart`：启动即 `WidgetsFlutterBinding.ensureInitialized(); await ReaderSettings.load();`，首帧就是用户主题，消除进入阅读页的换色闪。
    ⚠️ 改动要点：**不要再对 `_pagesCache` 做"尺寸一变就 clear"**，否则闪烁回归；判断缓存有效性一律用 `_paginatedSize == _pageSize`。
+
+24. **重签 .app 若不带 `--entitlements`，书架数据会"全部消失"（2026-10-28 踩，务必看）**：
+    `scripts/build_macos.sh` 替换 icns 后要重新 adhoc 签名，早先写的是裸 `codesign --force --deep --sign -`，它把 Xcode 写入的 entitlements **全部抹掉**。其中 `com.apple.security.app-sandbox` 一旦丢失，App 就不再是沙盒应用，`getApplicationSupportDirectory()` 随之从
+    `~/Library/Containers/com.reader.novelReader/Data/Library/Application Support/com.reader.novelReader/novel_reader_books`
+    改指 `~/Library/Application Support/com.reader.novelReader/novel_reader_books`（空目录）→ 书架空白，但**旧数据一本没丢**，只是在容器里。
+    正确写法：`codesign --force --sign - --entitlements macos/Runner/Release.entitlements "$APP_PATH"`，**不要 `--deep`**（嵌套 framework 已由 Xcode 签好，深签会把 App 的 entitlements 套到子组件上）。脚本已加 `codesign -d --entitlements -` 自检，缺 `app-sandbox` 会打印警告。
+    排查口诀：**书架变空先看 `~/Library/Application Support/<bundleId>` 是否被新建** —— 有就是签丢了沙盒，把数据从容器拷回或重签即可，切勿重下。
+
+25. **TXT 章节切分别只匹配"第 X 章"前缀**：正文里「第二章正文开始。剧情继续……」这类句子同样以「第 X 章」开头，早期正则 `[^\n]{0,40}$` 会把它当标题，导致标题错位、正文被劈开。现行规则：标题正文 ≤30 字且**不允许出现 `。!?;，,、:：`**，同时必须独占一行。改动这条正则后务必用 `dart run tool/test_txt.dart` 回归（含 GBK/UTF-8 双样本 + 无标题兜底切分）。
 
 ## 7. 测试
 

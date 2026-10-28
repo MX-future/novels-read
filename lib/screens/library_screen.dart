@@ -1,16 +1,42 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import '../models/book.dart';
 import '../services/epub_service.dart';
 import '../services/progress_store.dart';
+import '../services/txt_importer.dart';
 import '../theme/app_theme.dart';
 import '../widgets/book_grid_item.dart';
 import '../widgets/book_sidebar_tile.dart';
 import 'fanqie_import_dialog.dart';
 import 'reader_screen.dart';
+
+/// 批量导入的实时进度。total 为待处理文件数,done 为已处理数。
+///
+/// 用 ChangeNotifier 而不是 ValueNotifier:进度字段是原地累加的,
+/// ValueNotifier 对同一实例赋值不会触发通知,界面会一直停在第一帧。
+class _BatchProgress extends ChangeNotifier {
+  _BatchProgress({required this.total});
+
+  final int total;
+  int done = 0;
+  int imported = 0;
+  int skipped = 0;
+  int failed = 0;
+  bool cancelled = false;
+  String current = '';
+  final List<String> failedNames = [];
+
+  void update(void Function(_BatchProgress p) fn) {
+    fn(this);
+    notifyListeners();
+  }
+}
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -45,33 +71,220 @@ class _LibraryScreenState extends State<LibraryScreen> {
     });
   }
 
+  /// 导入本地小说:文件可多选(epub / txt),选完统一走批量流程。
   Future<void> _importBook() async {
+    if (_importing) return;
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['epub', 'txt'],
+      allowMultiple: true,
+      dialogTitle: '导入小说(可按住 ⌘/⇧ 多选)',
+    );
+    if (result == null) return;
+    final paths =
+        result.files.map((f) => f.path).whereType<String>().toList(growable: false);
+    if (paths.isEmpty) return;
+    await _runBatchImport(paths);
+  }
+
+  /// 批量导入:选择一个文件夹,递归扫描其中所有 epub / txt。
+  Future<void> _importFolder() async {
+    if (_importing) return;
+    final dir = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: '选择小说文件夹(含子文件夹)',
+    );
+    if (dir == null) return;
+
+    final paths = <String>[];
+    try {
+      await for (final e
+          in Directory(dir).list(recursive: true, followLinks: false)) {
+        if (e is! File) continue;
+        final lower = e.path.toLowerCase();
+        if (lower.endsWith('.epub') || lower.endsWith('.txt')) {
+          paths.add(e.path);
+        }
+      }
+    } catch (e) {
+      _showToast('读取文件夹失败:$e');
+      return;
+    }
+    if (paths.isEmpty) {
+      _showToast('该文件夹内没有找到 epub / txt 文件');
+      return;
+    }
+    paths.sort();
+    await _runBatchImport(paths);
+  }
+
+  /// 逐本导入 [paths],带进度弹窗、重复书跳过与失败汇总。
+  Future<void> _runBatchImport(List<String> paths) async {
     if (_importing) return;
     setState(() => _importing = true);
 
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['epub'],
-        allowMultiple: true,
-        dialogTitle: '导入小说',
-      );
-      if (result == null || result.files.isEmpty) return;
+    // 已有书籍 + 已导入过同一个源文件的,均视为重复
+    final existingKeys = <String>{
+      for (final b in _books) '${b.title}|${b.author}',
+    };
+    final existingSources = <String>{
+      for (final b in _books) b.sourcePath,
+    };
 
-      for (final f in result.files) {
-        final path = f.path;
-        if (path == null) continue;
-        try {
-          await EpubService.importFromFile(path);
-        } catch (e) {
-          _showToast('导入失败:${f.name}');
-        }
+    final progress = _BatchProgress(total: paths.length);
+    final navigator = Navigator.of(context, rootNavigator: true);
+    unawaited(showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _buildBatchDialog(progress),
+    ));
+    // 让弹窗先完成一帧渲染,避免长任务把它卡住不显示
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+
+    var cancelRequested = false;
+
+    for (var i = 0; i < paths.length; i++) {
+      if (progress.cancelled) {
+        cancelRequested = true;
+        break;
       }
-      await _refresh();
-      _showToast('导入完成');
-    } finally {
-      if (mounted) setState(() => _importing = false);
+      final path = paths[i];
+      final name = p.basename(path);
+      progress.update((p) {
+        p.current = name;
+        p.done = i;
+      });
+      await Future<void>.delayed(Duration.zero);
+
+      if (existingSources.contains(path)) {
+        progress.update((p) {
+          p.skipped += 1;
+          p.done = i + 1;
+        });
+        continue;
+      }
+
+      try {
+        final lower = path.toLowerCase();
+        final book = lower.endsWith('.txt')
+            ? await TxtImporter.parseFile(path)
+            : await EpubService.importFromFile(path);
+        if (lower.endsWith('.txt')) {
+          await EpubService.saveBook(book);
+        }
+
+        final key = '${book.title}|${book.author}';
+        if (existingKeys.contains(key)) {
+          // 同书名同作者已在架上,删掉刚写入的副本并计为跳过
+          await EpubService.deleteBook(book.id);
+          progress.update((p) => p.skipped += 1);
+        } else {
+          existingKeys.add(key);
+          existingSources.add(path);
+          progress.update((p) => p.imported += 1);
+        }
+      } catch (_) {
+        progress.update((p) {
+          p.failed += 1;
+          p.failedNames.add(name);
+        });
+      }
+      progress.update((p) => p.done = i + 1);
     }
+
+    final importedCount = progress.imported;
+    final skippedCount = progress.skipped;
+    final failedCount = progress.failed;
+    final failedNames = List<String>.from(progress.failedNames);
+    if (mounted && navigator.canPop()) navigator.pop();
+    // 等退场动画走完再释放,否则 builder 可能在动画期间访问已 dispose 的通知器
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    progress.dispose();
+
+    await _refresh();
+    if (mounted) setState(() => _importing = false);
+
+    if (!mounted) return;
+    final parts = <String>['导入 $importedCount 本'];
+    if (skippedCount > 0) parts.add('跳过重复 $skippedCount');
+    if (failedCount > 0) {
+      parts.add('失败 $failedCount');
+      final names = failedNames.take(3).join('、');
+      parts.add('($names${failedNames.length > 3 ? ' 等' : ''})');
+    }
+    if (cancelRequested) parts.add('已手动停止');
+    _showToast(parts.join(' · '));
+  }
+
+  Widget _buildBatchDialog(_BatchProgress progress) {
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      title: const Row(
+        children: [
+          Icon(Icons.library_add_outlined, size: 20, color: AppTheme.primary),
+          SizedBox(width: 8),
+          Text('批量导入', style: TextStyle(color: AppTheme.textPrimary)),
+        ],
+      ),
+      content: SizedBox(
+        width: 340,
+        child: ListenableBuilder(
+          listenable: progress,
+          builder: (context, _) {
+            final ratio = progress.total == 0
+                ? 0.0
+                : (progress.done / progress.total).clamp(0.0, 1.0);
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: ratio,
+                    minHeight: 6,
+                    backgroundColor: const Color(0xFFEAF2FC),
+                    valueColor:
+                        const AlwaysStoppedAnimation<Color>(AppTheme.primary),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '${progress.done} / ${progress.total} · 成功 ${progress.imported}'
+                  '${progress.skipped > 0 ? ' · 跳过 ${progress.skipped}' : ''}'
+                  '${progress.failed > 0 ? ' · 失败 ${progress.failed}' : ''}',
+                  style: const TextStyle(
+                      color: AppTheme.textSecondary, fontSize: 12),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  progress.current.isEmpty ? '准备中…' : progress.current,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: AppTheme.textPrimary, fontSize: 13),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+      actions: [
+        ListenableBuilder(
+          listenable: progress,
+          builder: (context, _) => TextButton(
+            onPressed: progress.cancelled
+                ? null
+                : () {
+                    // 只置标记,由循环自然收尾,避免打断正在写入的文件
+                    progress.update((p) => p.cancelled = true);
+                  },
+            child: const Text('取消',
+                style: TextStyle(color: AppTheme.textSecondary)),
+          ),
+        ),
+      ],
+    );
   }
 
   /// 在线导入番茄小说:粘贴链接/ID → 选范围 → 下载并入架。
@@ -256,6 +469,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
             const SizedBox(height: 16),
             _buildImportButton(),
             const SizedBox(height: 10),
+            _buildFolderButton(collapsed: true),
+            const SizedBox(height: 10),
             _buildFanqieImportButton(),
           ],
         ),
@@ -289,7 +504,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          _buildImportButton(),
+          Row(
+            children: [
+              Expanded(child: _buildImportButton()),
+              const SizedBox(width: 8),
+              _buildFolderButton(),
+            ],
+          ),
           const SizedBox(height: 10),
           _buildFanqieImportButton(),
         ],
@@ -386,6 +607,52 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 批量导入文件夹:选一个目录,递归扫描里面的 epub / txt 一次性入架。
+  Widget _buildFolderButton({bool collapsed = false}) {
+    const bg = Color(0xFFE8F1FC);
+    const hover = Color(0xFFD8E7F8);
+    const icon = Icon(Icons.folder_copy_outlined,
+        size: 18, color: AppTheme.primaryDark);
+
+    if (collapsed) {
+      return Tooltip(
+        message: '批量导入文件夹',
+        child: Material(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            onTap: _importing ? null : _importFolder,
+            borderRadius: BorderRadius.circular(8),
+            hoverColor: hover,
+            child: const SizedBox(
+              height: 40,
+              child: Center(child: icon),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Tooltip(
+      message: '批量导入文件夹',
+      child: Material(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: _importing ? null : _importFolder,
+          borderRadius: BorderRadius.circular(8),
+          hoverColor: hover,
+          child: Container(
+            width: 42,
+            padding: const EdgeInsets.symmetric(vertical: 9),
+            alignment: Alignment.center,
+            child: icon,
           ),
         ),
       ),
@@ -530,13 +797,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              '导入本地 epub 或在线番茄小说开始阅读',
+              '批量导入本地 epub / txt,或在线导入番茄小说',
               style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
             ),
             const SizedBox(height: 24),
-            _buildInlineImportButton(),
+            // 两个按钮统一宽度,避免因文字长短造成宽窄不一
+            SizedBox(width: 236, child: _buildInlineImportButton()),
             const SizedBox(height: 10),
-            _buildInlineFanqieButton(),
+            SizedBox(width: 236, child: _buildInlineFanqieButton()),
           ],
         ),
       ),
@@ -554,6 +822,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
           child: Row(
             mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
                 _importing ? Icons.hourglass_top : Icons.file_download_outlined,
@@ -562,7 +831,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ),
               const SizedBox(width: 8),
               Text(
-                _importing ? '导入中…' : '选择 epub 文件',
+                _importing ? '导入中…' : '导入本地小说',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 13,
@@ -588,6 +857,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
           child: const Row(
             mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(Icons.cloud_download_outlined,
                   size: 16, color: AppTheme.primaryDark),
