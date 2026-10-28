@@ -47,6 +47,10 @@ if [ -n "$APP_PATH" ] && [ -d "$APP_PATH/Contents/Resources" ]; then
     cp "$SRC/app_icon_1024.png" "$ICONSET/icon_512x512@2x.png"
     iconutil -c icns "$ICONSET" -o "$APP_PATH/Contents/Resources/AppIcon.icns" 2>/dev/null
     echo "==> icns 已用 iconutil 重新打包 (无 alpha, 含 1024@2x)"
+    # 替换 icns 会让 Xcode 已写入的资源封印失效(codesign -v 报
+    # "a sealed resource is missing or invalid"),改完图标必须重新 adhoc 签名。
+    codesign --force --deep --sign - "$APP_PATH" 2>/dev/null \
+      && echo "==> 已重新 adhoc 签名"
   fi
   rm -rf "$ICONSET"
 fi
