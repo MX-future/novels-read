@@ -49,8 +49,29 @@ if [ -n "$APP_PATH" ] && [ -d "$APP_PATH/Contents/Resources" ]; then
     echo "==> icns 已用 iconutil 重新打包 (无 alpha, 含 1024@2x)"
     # 替换 icns 会让 Xcode 已写入的资源封印失效(codesign -v 报
     # "a sealed resource is missing or invalid"),改完图标必须重新 adhoc 签名。
-    codesign --force --deep --sign - "$APP_PATH" 2>/dev/null \
-      && echo "==> 已重新 adhoc 签名"
+    #
+    # !! 必须带 --entitlements !!
+    # 裸 `codesign --force --sign -` 会把 Xcode 写入的 entitlements 全部抹掉,
+    # 其中 com.apple.security.app-sandbox 一旦丢失,App 就不再走沙盒容器,
+    # getApplicationSupportDirectory() 会改指 ~/Library/Application Support/
+    # <bundleId>,书架数据(在 Containers 里)看起来就"全部消失"了。
+    # 另外不要用 --deep: 嵌套 framework/Plugin 已由 Xcode 签好,重复深签
+    # 会把 App 的 entitlements 套到子组件上,同样有风险。
+    ENTITLEMENTS="macos/Runner/Release.entitlements"
+    if [ "${1:-}" = "--debug" ]; then
+      ENTITLEMENTS="macos/Runner/DebugProfile.entitlements"
+    fi
+    if [ -f "$ENTITLEMENTS" ]; then
+      codesign --force --sign - --entitlements "$ENTITLEMENTS" "$APP_PATH" 2>/dev/null \
+        && echo "==> 已重新 adhoc 签名 (entitlements: $ENTITLEMENTS)"
+      if codesign -d --entitlements - "$APP_PATH" 2>/dev/null | grep -q "app-sandbox"; then
+        echo "==> 沙盒权限校验通过"
+      else
+        echo "!!  警告: 签名后未检出 app-sandbox,书架数据路径会错位" >&2
+      fi
+    else
+      echo "!!  未找到 $ENTITLEMENTS,跳过重签(资源封印可能失效)" >&2
+    fi
   fi
   rm -rf "$ICONSET"
 fi
