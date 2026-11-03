@@ -10,11 +10,13 @@ import '../models/book.dart';
 import '../services/epub_service.dart';
 import '../services/progress_store.dart';
 import '../services/txt_importer.dart';
+import '../services/watch_folder_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/book_grid_item.dart';
 import '../widgets/book_sidebar_tile.dart';
 import 'fanqie_import_dialog.dart';
 import 'reader_screen.dart';
+import 'watch_folder_dialog.dart';
 
 /// 批量导入的实时进度。total 为待处理文件数,done 为已处理数。
 ///
@@ -54,10 +56,54 @@ class _LibraryScreenState extends State<LibraryScreen> {
   bool _loading = true;
   bool _sidebarCollapsed = false;
 
+  /// 自动导入目录;null 表示未设置或授权已失效。
+  String? _watchPath;
+
   @override
   void initState() {
     super.initState();
-    _refresh();
+    _initLibrary();
+  }
+
+  /// 先渲染书架,再在后台静默扫描自动导入目录,避免扫描拖慢首帧。
+  Future<void> _initLibrary() async {
+    await _refresh();
+    _watchPath = await WatchFolderService.restoreAccess();
+    if (!mounted) return;
+    setState(() {});
+    await _autoScanOnLaunch();
+  }
+
+  /// 启动静默扫描:有新浪就入架并提示一句,没有则什么都不做。
+  Future<void> _autoScanOnLaunch() async {
+    if (_watchPath == null) return;
+    // 让书架列表先绘制出来,扫描是纯后台行为
+    await Future<void>.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+    try {
+      final result = await WatchFolderService.scan(existing: _books);
+      if (result == null || !mounted) return;
+      if (result.imported > 0) {
+        await _refresh();
+        if (mounted) _showToast('自动导入 ${result.imported} 本新书');
+      }
+    } on WatchFolderException {
+      // 启动扫描失败不打扰用户,设置弹窗里能看到具体原因
+    }
+  }
+
+  Future<void> _openWatchFolderSettings() async {
+    await showWatchFolderDialog(
+      context,
+      onLibraryChanged: () {
+        _refresh();
+        if (mounted) {
+          setState(() => _watchPath = WatchFolderService.activePath);
+        }
+      },
+    );
+    if (!mounted) return;
+    setState(() => _watchPath = WatchFolderService.activePath);
   }
 
   Future<void> _refresh() async {
@@ -472,6 +518,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
             _buildFolderButton(collapsed: true),
             const SizedBox(height: 10),
             _buildFanqieImportButton(),
+            const SizedBox(height: 10),
+            _buildWatchFolderButton(),
           ],
         ),
       );
@@ -513,6 +561,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
           const SizedBox(height: 10),
           _buildFanqieImportButton(),
+          const SizedBox(height: 8),
+          _buildWatchFolderButton(),
         ],
       ),
     );
@@ -704,6 +754,84 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     color: AppTheme.primaryDark,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 自动导入目录入口:显示当前目录名,点击打开设置弹窗。
+  Widget _buildWatchFolderButton() {
+    const bg = Color(0xFFE8F1FC);
+    const hover = Color(0xFFD8E7F8);
+    final configured = _watchPath != null;
+    final icon = Icon(
+      configured ? Icons.folder_special_outlined : Icons.create_new_folder_outlined,
+      size: 15,
+      color: AppTheme.primaryDark,
+    );
+
+    if (_sidebarCollapsed) {
+      return Tooltip(
+        message: configured
+            ? '自动导入:${p.basename(_watchPath!)}'
+            : '设置自动导入目录',
+        child: Material(
+          color: bg,
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            onTap: _openWatchFolderSettings,
+            borderRadius: BorderRadius.circular(8),
+            hoverColor: hover,
+            child: const SizedBox(
+              height: 40,
+              child: Center(
+                child: Icon(
+                  Icons.folder_special_outlined,
+                  size: 19,
+                  color: AppTheme.primaryDark,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Tooltip(
+      message: configured ? _watchPath! : '选择文件夹,每次启动自动导入其中的新书',
+      waitDuration: const Duration(milliseconds: 500),
+      child: Material(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: _openWatchFolderSettings,
+          borderRadius: BorderRadius.circular(8),
+          hoverColor: hover,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                icon,
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    configured
+                        ? '自动导入:${p.basename(_watchPath!)}'
+                        : '设置自动导入目录',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppTheme.primaryDark,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],

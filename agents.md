@@ -70,6 +70,7 @@ lib/
 ├── services/
 │   ├── epub_service.dart        # EPUB 解析（epubx）：章节内容 → 纯文本、封面、元数据；另暴露 saveBook/saveCover 供番茄入库
 │   ├── txt_importer.dart        # TXT 解析：编码探测（UTF-8/16/GBK）+ 章节切分，返回 Book 不落盘
+│   ├── watch_folder_service.dart # 自动导入目录：bookmark 授权恢复 + 扫描去重入库
 │   ├── gbk_table.dart           # GBK→Unicode 对照表（base64 内联 48KB，自动生成，勿手改）
 │   ├── fanqie/
 │   │   ├── fanqie_service.dart  # 番茄直连服务：目录/书页/正文抓取 + PUA 解码 + 范围下载(续传/跳过VIP/落盘)
@@ -109,7 +110,7 @@ test/                            # 101 个用例（pagination/settings/progress/
 ## 4. 功能点
 
 ### 书架页（library_screen.dart）
-- 左侧侧边栏：书籍列表（含阅读进度 %），支持折叠；导入按钮（file_picker，多选）+ 文件夹批量导入（次级方形按钮）+ 在线导入(番茄)次级按钮
+- 左侧侧边栏：书籍列表（含阅读进度 %），支持折叠；导入按钮（file_picker，多选）+ 文件夹批量导入（次级方形按钮）+ 在线导入(番茄)次级按钮 + 自动导入目录入口
 - 右侧书库网格：封面 + 书名 + 阅读进度条（动态列数，`max(3, width/180)`）
 - 键盘：`←/→` 翻页（书架网格）、`↑/↓` 切换章节、空格翻页
 - 顶部留出 macOS 交通灯区域（40px）
@@ -122,6 +123,15 @@ test/                            # 101 个用例（pagination/settings/progress/
 - TXT 编码：BOM → UTF-8 严格解码 → UTF-16 嗅探 → GBK 对照表；GBK 表由 `lib/services/gbk_table.dart` 内联提供，**不引入第三方包**
 - TXT 章节：识别「第 X 章/节/回/卷」标题行（标题正文 ≤30 字且不含句读标点），首个标题前 ≥60 字记为「前言」；识别不到标题则按 3000 字兜底分节
 - 纯逻辑可单测：`TxtImporter.decodeBytes/splitChapters/parseFile` 不依赖 Flutter，`dart run tool/test_txt.dart` 可直接跑
+
+### 自动导入目录（services/watch_folder_service.dart + screens/watch_folder_dialog.dart）
+- 入口：侧边栏「设置自动导入目录 / 自动导入:<目录名>」次级按钮，折叠态为图标按钮
+- 流程：选目录 → 原生层存 security-scoped bookmark → 立刻扫一次 → 之后每次 `LibraryScreen.initState` 延迟 800ms 静默扫描，有新书才 toast
+- 去重：同 `sourcePath` 直接跳过（不解析，启动扫描绝大多数走这条）；同 `title|author` 删副本计为跳过
+- 性能：启动扫描复用 `_refresh()` 已读的 `_books`（`scan(existing:)`），不再二次全量读盘
+- 状态落 SharedPreferences：`watch_folder_path` / `watch_folder_last_scan` / `watch_folder_last_imported`
+- **沙盒硬约束（最容易踩）**：`NSOpenPanel` 授予的访问权限只在当前进程有效，退出即失效。必须把 URL 存成 `bookmarkData(.withSecurityScope)`，下次启动 `URL(resolvingBookmarkData:)` + `startAccessingSecurityScopedResource()` 才能读；entitlements 还需 `com.apple.security.files.bookmarks.app-scope`。缺任一项的表现是「重启后一本都扫描不到」而不是报错。
+- 通道：`com.reader.novelReader/watchfolder`（`pick` / `restore` / `clear`），实现在 `macos/Runner/MainFlutterWindow.swift`
 
 ### 在线导入番茄小说（services/fanqie/ + screens/fanqie_import_dialog.dart）
 - 入口：侧边栏"在线导入(番茄)"按钮 / 空书架中央次级按钮；无关键词搜索（官方搜索被风控，见坑 #14）
